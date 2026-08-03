@@ -1,0 +1,45 @@
+﻿@page "/"
+
+@using MauiUygulama.Models
+@using MauiUygulama.ViewModels
+
+@inject ModeSelectionViewModel ViewModel
+@inject NavigationManager Navigation
+
+<PageTitle>Mod Seçimi</PageTitle>
+
+<div class="container text-center mt-5">
+    <h1>Modbus TCP Uygulaması</h1>
+
+    <p class="lead">
+        Uygulamanın hangi modda çalışacağını seçiniz.
+    </p>
+
+    <div class="d-flex justify-content-center gap-3 mt-4">
+        <button class="btn btn-primary btn-lg"
+                @onclick="() => SelectMode(ModbusOperatingMode.Master)">
+            Master Modu
+        </button>
+
+        <button class="btn btn-success btn-lg"
+                @onclick="() => SelectMode(ModbusOperatingMode.Slave)">
+            Slave Modu
+        </button>
+    </div>
+</div>
+
+@code {
+    private void SelectMode(ModbusOperatingMode mode)
+    {
+        ViewModel.SelectMode(mode);
+
+        if (mode == ModbusOperatingMode.Master)
+        {
+            Navigation.NavigateTo("/master");
+        }
+        else
+        {
+            Navigation.NavigateTo("/slave");
+        }
+    }
+}
