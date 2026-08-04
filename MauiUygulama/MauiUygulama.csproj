@@ -74,13 +74,11 @@
 
     <ItemGroup>
       <Folder Include="Components\Shared\" />
-      <Folder Include="Core\Interfaces\" />
       <Folder Include="Core\Modbus\Messages\" />
       <Folder Include="Core\Modbus\Exceptions\" />
       <Folder Include="Core\Modbus\Protocol\" />
       <Folder Include="Infrastructure\Extensions\" />
       <Folder Include="Infrastructure\Helpers\" />
-      <Folder Include="Services\Communication\" />
       <Folder Include="Services\Logging\" />
       <Folder Include="Services\Registers\" />
     </ItemGroup>
