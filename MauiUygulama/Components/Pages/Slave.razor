@@ -1,11 +1,13 @@
 ﻿@page "/slave"
-@using System.Text
+
 @using MauiUygulama.Core.Interfaces
 @using MauiUygulama.Models
 
 @implements IDisposable
 
 @inject ITcpServerService TcpServer
+@inject ITcpReceivedDataStore ReceivedDataStore
+@inject IModbusFrameStore ModbusFrameStore
 
 <PageTitle>Slave Modu</PageTitle>
 
@@ -18,7 +20,6 @@
 
     <div class="card shadow-sm mt-4">
         <div class="card-body">
-
             <div class="mb-3">
                 <label for="serverIpAddress" class="form-label">
                     Dinleme IP Adresi
@@ -106,6 +107,111 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">
+                    Ayrıştırılan Modbus TCP İstekleri
+                </h5>
+
+                <button class="btn btn-sm btn-outline-danger"
+                        @onclick="ClearModbusFrames"
+                        disabled="@(_modbusFrames.Count == 0)">
+                    Listeyi Temizle
+                </button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_modbusFrameError))
+            {
+                <div class="alert alert-danger mt-3" role="alert">
+                    @_modbusFrameError
+                </div>
+            }
+
+            @if (_modbusFrames.Count == 0)
+            {
+                <div class="alert alert-secondary mt-3 mb-0">
+                    Henüz eksiksiz bir Modbus TCP isteği alınmadı.
+                </div>
+            }
+            else
+            {
+                @foreach (ModbusFrameRecord item in _modbusFrames)
+                {
+                    <div class="border rounded p-3 mt-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <strong>
+                                Function Code:
+                                0x@(item.Frame.FunctionCode.ToString("X2"))
+                                — @GetFunctionName(item.Frame.FunctionCode)
+                            </strong>
+
+                            <small class="text-muted">
+                                @item.ReceivedAt.ToString("HH:mm:ss")
+                            </small>
+                        </div>
+
+                        <div class="row mt-3 g-3">
+                            <div class="col-md-4">
+                                <strong>Transaction ID:</strong>
+                                @item.Frame.TransactionId
+                            </div>
+
+                            <div class="col-md-4">
+                                <strong>Protocol ID:</strong>
+                                @item.Frame.ProtocolId
+                            </div>
+
+                            <div class="col-md-4">
+                                <strong>Unit ID:</strong>
+                                @item.Frame.UnitId
+                            </div>
+
+                            <div class="col-md-4">
+                                <strong>MBAP Length:</strong>
+                                @item.Frame.Length
+                            </div>
+
+                            <div class="col-md-4">
+                                <strong>Toplam uzunluk:</strong>
+                                @item.Frame.TotalByteCount byte
+                            </div>
+
+                            <div class="col-md-4">
+                                <strong>Master kimliği:</strong>
+                                <span class="font-monospace">
+                                    @(item.ClientId.ToString()[..8])
+                                </span>
+                            </div>
+                        </div>
+                        @if (item.StartAddress.HasValue && item.Quantity.HasValue)
+                        {
+                            <div class="row mt-1 g-3">
+                                <div class="col-md-6">
+                                    <strong>Başlangıç register adresi:</strong>
+                                    @item.StartAddress.Value
+                                </div>
+
+                                <div class="col-md-6">
+                                    <strong>Register miktarı:</strong>
+                                    @item.Quantity.Value
+                                </div>
+                            </div>
+                        }
+
+                        <div class="mt-3">
+                            <strong>Tam paket (HEX):</strong>
+
+                            <div class="bg-dark text-light border rounded p-2 mt-1 font-monospace">
+                                @item.Frame.Hex
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
                     Gelen TCP Verileri
                 </h5>
 
@@ -124,11 +230,12 @@
             }
             else
             {
-                @foreach (ReceivedDataItem item in _receivedItems)
+                @foreach (ReceivedTcpDataItem item in _receivedItems)
                 {
                     <div class="border rounded p-3 mt-3">
                         <div class="d-flex justify-content-between">
                             <strong>Master: @item.ClientName</strong>
+
                             <small class="text-muted">
                                 @item.ReceivedAt.ToString("HH:mm:ss")
                             </small>
@@ -165,7 +272,11 @@
 </div>
 
 @code {
-    private readonly List<ReceivedDataItem> _receivedItems = new();
+    private IReadOnlyList<ReceivedTcpDataItem> _receivedItems =
+        Array.Empty<ReceivedTcpDataItem>();
+
+    private IReadOnlyList<ModbusFrameRecord> _modbusFrames =
+        Array.Empty<ModbusFrameRecord>();
 
     private readonly TcpServerSettings _settings = new()
     {
@@ -178,59 +289,21 @@
     private bool _isBusy;
     private bool _isError;
     private string? _message;
+    private string? _modbusFrameError;
 
     protected override void OnInitialized()
     {
         TcpServer.ServerStateChanged += OnServerStateChanged;
         TcpServer.ClientConnected += OnClientConnected;
         TcpServer.ClientDisconnected += OnClientDisconnected;
-        TcpServer.DataReceived += OnDataReceived;
         TcpServer.ServerError += OnServerError;
-    }
 
-    private void OnDataReceived(
-    Guid clientId,
-    ReadOnlyMemory<byte> data)
-    {
-        byte[] receivedBytes = data.ToArray();
+        ReceivedDataStore.DataChanged += OnReceivedDataChanged;
 
-        _ = InvokeAsync(() =>
-        {
-            string text = Encoding.UTF8.GetString(receivedBytes);
+        ModbusFrameStore.DataChanged += OnModbusFrameStoreChanged;
 
-            string hex = BitConverter
-                .ToString(receivedBytes)
-                .Replace("-", " ");
-
-            _receivedItems.Insert(
-                0,
-                new ReceivedDataItem
-                {
-                    ClientName = clientId.ToString("N")[..8],
-                    ReceivedAt = DateTime.Now,
-                    Text = text,
-                    Hex = hex,
-                    ByteCount = receivedBytes.Length
-                });
-
-            // Ekranda en fazla son 100 kayıt tutulur.
-            if (_receivedItems.Count > 100)
-            {
-                _receivedItems.RemoveAt(
-                    _receivedItems.Count - 1);
-            }
-
-            _isError = false;
-            _message =
-                $"Master’dan {receivedBytes.Length} byte veri alındı.";
-
-            StateHasChanged();
-        });
-    }
-
-    private void ClearReceivedData()
-    {
-        _receivedItems.Clear();
+        RefreshReceivedItems();
+        RefreshModbusFrames();
     }
 
     private async Task StartServerAsync()
@@ -335,25 +408,70 @@
         });
     }
 
-   public void Dispose()
-{
-    TcpServer.ServerStateChanged -= OnServerStateChanged;
-    TcpServer.ClientConnected -= OnClientConnected;
-    TcpServer.ClientDisconnected -= OnClientDisconnected;
-    TcpServer.DataReceived -= OnDataReceived;
-    TcpServer.ServerError -= OnServerError;
-}
-
-    private sealed class ReceivedDataItem
+    private void OnReceivedDataChanged()
     {
-        public string ClientName { get; init; } = string.Empty;
+        _ = InvokeAsync(() =>
+        {
+            RefreshReceivedItems();
+            StateHasChanged();
+        });
+    }
 
-        public DateTime ReceivedAt { get; init; }
+    private void RefreshReceivedItems()
+    {
+        _receivedItems = ReceivedDataStore.Items;
+    }
 
-        public string Text { get; init; } = string.Empty;
+    private void ClearReceivedData()
+    {
+        ReceivedDataStore.Clear();
+    }
 
-        public string Hex { get; init; } = string.Empty;
+    private void OnModbusFrameStoreChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshModbusFrames();
+            StateHasChanged();
+        });
+    }
 
-        public int ByteCount { get; init; }
+    private void RefreshModbusFrames()
+    {
+        _modbusFrames = ModbusFrameStore.Items;
+        _modbusFrameError = ModbusFrameStore.LastError;
+    }
+
+    private void ClearModbusFrames()
+    {
+        ModbusFrameStore.Clear();
+    }
+
+    private static string GetFunctionName(byte functionCode)
+    {
+        return functionCode switch
+        {
+            0x01 => "Coil Oku",
+            0x02 => "Discrete Input Oku",
+            0x03 => "Holding Register Oku",
+            0x04 => "Input Register Oku",
+            0x05 => "Tek Coil Yaz",
+            0x06 => "Tek Holding Register Yaz",
+            0x0F => "Çoklu Coil Yaz",
+            0x10 => "Çoklu Holding Register Yaz",
+            _ => "Bilinmeyen fonksiyon"
+        };
+    }
+
+    public void Dispose()
+    {
+        TcpServer.ServerStateChanged -= OnServerStateChanged;
+        TcpServer.ClientConnected -= OnClientConnected;
+        TcpServer.ClientDisconnected -= OnClientDisconnected;
+        TcpServer.ServerError -= OnServerError;
+
+        ReceivedDataStore.DataChanged -= OnReceivedDataChanged;
+
+        ModbusFrameStore.DataChanged -= OnModbusFrameStoreChanged;
     }
 }

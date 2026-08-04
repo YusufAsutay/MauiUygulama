@@ -2,6 +2,7 @@
 using MauiUygulama.ViewModels;
 using MauiUygulama.Core.Interfaces;
 using MauiUygulama.Services.Communication;
+using MauiUygulama.Services.Modbus;
 
 namespace MauiUygulama
 {
@@ -29,6 +30,13 @@ namespace MauiUygulama
             builder.Services.AddSingleton<
                 ITcpReceivedDataStore,
                 TcpReceivedDataStore>();
+
+            builder.Services.AddSingleton<
+                IModbusTcpFrameAssembler,
+                ModbusTcpFrameAssembler>();
+            builder.Services.AddSingleton<
+                 IModbusFrameStore,
+                 ModbusFrameStore>();
 
 #endif
 

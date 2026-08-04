@@ -96,7 +96,88 @@
 
     <div class="card shadow-sm mt-4">
         <div class="card-body">
-            <h5 class="card-title">Deneme Verisi Gönder</h5>
+            <h5 class="card-title">Holding Register Oku (Function 03)</h5>
+
+            <p class="text-muted">
+                Slave tarafına gerçek bir Modbus TCP Holding Register okuma isteği gönderir.
+            </p>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="unitId" class="form-label">
+                        Unit ID
+                    </label>
+
+                    <input id="unitId"
+                           class="form-control"
+                           type="number"
+                           min="0"
+                           max="255"
+                           @bind="_unitId"
+                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <label for="startingAddress" class="form-label">
+                        Başlangıç Adresi
+                    </label>
+
+                    <input id="startingAddress"
+                           class="form-control"
+                           type="number"
+                           min="0"
+                           max="65535"
+                           @bind="_startingAddress"
+                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <label for="registerQuantity" class="form-label">
+                        Register Miktarı
+                    </label>
+
+                    <input id="registerQuantity"
+                           class="form-control"
+                           type="number"
+                           min="1"
+                           max="125"
+                           @bind="_registerQuantity"
+                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                </div>
+            </div>
+
+            <button class="btn btn-primary"
+                    @onclick="SendReadHoldingRegistersRequestAsync"
+                    disabled="@(_isBusy || !TcpClient.IsConnected)">
+                Holding Register Oku
+            </button>
+
+            @if (!string.IsNullOrWhiteSpace(_lastModbusRequestHex))
+            {
+                <div class="mt-3">
+                    <strong>Gönderilen Modbus TCP isteği:</strong>
+
+                    <div class="border rounded bg-dark text-light p-2 mt-1 font-monospace">
+                        @_lastModbusRequestHex
+                    </div>
+
+                    <div class="mt-2 text-muted">
+                        Transaction ID: @_lastTransactionId,
+                        Function Code: 03,
+                        Toplam: 12 byte
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card shadow-sm mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Ham TCP Deneme Verisi Gönder</h5>
+
+            <p class="text-muted">
+                Bu bölüm yalnızca temel TCP testi içindir; gönderilen metin Modbus paketi değildir.
+            </p>
 
             <div class="mb-3">
                 <label for="outgoingText" class="form-label">
@@ -108,21 +189,21 @@
                           rows="3"
                           @bind="_outgoingText"
                           disabled="@(_isBusy || !TcpClient.IsConnected)">
-            </textarea>
+                </textarea>
             </div>
 
-            <button class="btn btn-primary"
+            <button class="btn btn-outline-primary"
                     @onclick="SendTestDataAsync"
                     disabled="@(_isBusy ||
-                                            !TcpClient.IsConnected ||
-                                            string.IsNullOrWhiteSpace(_outgoingText))">
-                Veriyi Gönder
+                                                !TcpClient.IsConnected ||
+                                                string.IsNullOrWhiteSpace(_outgoingText))">
+                Ham Veriyi Gönder
             </button>
 
             @if (!string.IsNullOrWhiteSpace(_lastSentHex))
             {
                 <div class="mt-3">
-                    <strong>Gönderilen HEX:</strong>
+                    <strong>Gönderilen ham verinin HEX değeri:</strong>
 
                     <div class="border rounded bg-light p-2 mt-1 font-monospace">
                         @_lastSentHex
@@ -132,16 +213,21 @@
         </div>
     </div>
 
-
     <a class="btn btn-secondary mt-3" href="/">
         Mod Seçimine Dön
     </a>
 </div>
 
 @code {
-
     private string _outgoingText = "Merhaba Slave";
     private string? _lastSentHex;
+
+    private byte _unitId = 1;
+    private ushort _startingAddress;
+    private ushort _registerQuantity = 10;
+    private ushort _nextTransactionId = 1;
+    private ushort _lastTransactionId;
+    private string? _lastModbusRequestHex;
 
     private readonly TcpConnectionSettings _settings = new()
     {
@@ -157,6 +243,102 @@
     protected override void OnInitialized()
     {
         TcpClient.ConnectionStateChanged += OnConnectionStateChanged;
+    }
+
+    private async Task SendReadHoldingRegistersRequestAsync()
+    {
+        if (!TcpClient.IsConnected)
+        {
+            _isError = true;
+            _message = "Önce Slave sunucusuna bağlanmalısınız.";
+            return;
+        }
+
+        if (_registerQuantity is < 1 or > 125)
+        {
+            _isError = true;
+            _message = "Register miktarı 1 ile 125 arasında olmalıdır.";
+            return;
+        }
+
+        int lastRegisterAddress =
+            _startingAddress + _registerQuantity - 1;
+
+        if (lastRegisterAddress > ushort.MaxValue)
+        {
+            _isError = true;
+            _message =
+                "Başlangıç adresi ile register miktarı geçerli adres aralığını aşıyor.";
+            return;
+        }
+
+        _isBusy = true;
+        _isError = false;
+        _message = null;
+
+        try
+        {
+            ushort transactionId = _nextTransactionId;
+            _nextTransactionId++;
+
+            byte[] request = CreateReadHoldingRegistersRequest(
+                transactionId,
+                _unitId,
+                _startingAddress,
+                _registerQuantity);
+
+            await TcpClient.SendAsync(request);
+
+            _lastTransactionId = transactionId;
+            _lastModbusRequestHex = BitConverter
+                .ToString(request)
+                .Replace("-", " ");
+
+            _message =
+                $"Function 03 isteği gönderildi. " +
+                $"Başlangıç adresi: {_startingAddress}, " +
+                $"register miktarı: {_registerQuantity}.";
+        }
+        catch (Exception exception)
+        {
+            _isError = true;
+            _message =
+                $"Modbus TCP isteği gönderilemedi: {exception.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static byte[] CreateReadHoldingRegistersRequest(
+        ushort transactionId,
+        byte unitId,
+        ushort startingAddress,
+        ushort registerQuantity)
+    {
+        byte[] request = new byte[12];
+
+        WriteUInt16BigEndian(request, 0, transactionId);
+        WriteUInt16BigEndian(request, 2, 0);
+        WriteUInt16BigEndian(request, 4, 6);
+
+        request[6] = unitId;
+        request[7] = 0x03;
+
+        WriteUInt16BigEndian(request, 8, startingAddress);
+        WriteUInt16BigEndian(request, 10, registerQuantity);
+
+        return request;
+    }
+
+    private static void WriteUInt16BigEndian(
+        byte[] destination,
+        int index,
+        ushort value)
+    {
+        destination[index] = (byte)(value >> 8);
+        destination[index + 1] = (byte)value;
     }
 
     private async Task SendTestDataAsync()
@@ -189,7 +371,7 @@
                 .ToString(data)
                 .Replace("-", " ");
 
-            _message = $"{data.Length} byte veri gönderildi.";
+            _message = $"{data.Length} byte ham TCP verisi gönderildi.";
         }
         catch (Exception exception)
         {
@@ -246,7 +428,8 @@
         catch (Exception exception)
         {
             _isError = true;
-            _message = $"Bağlantı kapatılırken hata oluştu: {exception.Message}";
+            _message =
+                $"Bağlantı kapatılırken hata oluştu: {exception.Message}";
         }
         finally
         {
