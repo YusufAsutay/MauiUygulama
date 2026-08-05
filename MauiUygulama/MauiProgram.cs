@@ -4,43 +4,58 @@ using MauiUygulama.Core.Interfaces;
 using MauiUygulama.Services.Communication;
 using MauiUygulama.Services.Modbus;
 
-namespace MauiUygulama
-{
-    public static class MauiProgram
-    {
-        public static MauiApp CreateMauiApp()
-        {
-            var builder = MauiApp.CreateBuilder();
-            builder
-                .UseMauiApp<App>()
-                .ConfigureFonts(fonts =>
-                {
-                    fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-                });
+namespace MauiUygulama;
 
-            builder.Services.AddMauiBlazorWebView();
+public static class MauiProgram
+{
+    public static MauiApp CreateMauiApp()
+    {
+        var builder = MauiApp.CreateBuilder();
+
+        builder
+            .UseMauiApp<App>()
+            .ConfigureFonts(fonts =>
+            {
+                fonts.AddFont(
+                    "OpenSans-Regular.ttf",
+                    "OpenSansRegular");
+            });
+
+        builder.Services.AddMauiBlazorWebView();
+
+        // Uygulamanın kullandığı servisler Debug ve Release'te kayıtlı olmalıdır.
+        builder.Services.AddSingleton<ModeSelectionViewModel>();
+        builder.Services.AddSingleton<ITcpClientService, TcpClientService>();
+        builder.Services.AddSingleton<ITcpServerService, TcpServerService>();
+
+        builder.Services.AddSingleton<
+            ITcpReceivedDataStore,
+            TcpReceivedDataStore>();
+
+        builder.Services.AddSingleton<
+            IModbusTcpFrameAssembler,
+            ModbusTcpFrameAssembler>();
+
+        builder.Services.AddSingleton<
+            IModbusFrameStore,
+            ModbusFrameStore>();
+
+        builder.Services.AddSingleton<
+            IRegisterManager,
+            RegisterManager>();
+
+        builder.Services.AddSingleton<
+            IModbusRequestProcessor,
+            ModbusRequestProcessor>();
+        builder.Services.AddSingleton<
+            IModbusMasterResponseStore,
+            ModbusMasterResponseStore>();
 
 #if DEBUG
-    		builder.Services.AddBlazorWebViewDeveloperTools();
-    		builder.Logging.AddDebug();
-            builder.Services.AddSingleton<ModeSelectionViewModel>();
-            builder.Services.AddSingleton<ITcpClientService, TcpClientService>();
-            builder.Services.AddSingleton<ITcpServerService, TcpServerService>();
-
-            builder.Services.AddSingleton<
-                ITcpReceivedDataStore,
-                TcpReceivedDataStore>();
-
-            builder.Services.AddSingleton<
-                IModbusTcpFrameAssembler,
-                ModbusTcpFrameAssembler>();
-            builder.Services.AddSingleton<
-                 IModbusFrameStore,
-                 ModbusFrameStore>();
-
+        builder.Services.AddBlazorWebViewDeveloperTools();
+        builder.Logging.AddDebug();
 #endif
 
-            return builder.Build();
-        }
+        return builder.Build();
     }
 }

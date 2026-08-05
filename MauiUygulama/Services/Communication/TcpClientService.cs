@@ -25,16 +25,13 @@ public sealed class TcpClientService : ITcpClientService
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-
         ArgumentNullException.ThrowIfNull(settings);
-
         ValidateSettings(settings);
 
         await _connectionLock.WaitAsync(cancellationToken);
 
         try
         {
-            // Daha önce açık bir bağlantı varsa kapatır.
             await DisconnectCoreAsync();
 
             var tcpClient = new TcpClient();
@@ -72,7 +69,6 @@ public sealed class TcpClientService : ITcpClientService
             {
                 tcpClient.Dispose();
                 SetConnectionState(false);
-
                 throw;
             }
         }
@@ -84,6 +80,8 @@ public sealed class TcpClientService : ITcpClientService
 
     public async Task DisconnectAsync()
     {
+        ThrowIfDisposed();
+
         await _connectionLock.WaitAsync();
 
         try
@@ -114,8 +112,13 @@ public sealed class TcpClientService : ITcpClientService
         try
         {
             NetworkStream stream = GetConnectedStream();
-
             await stream.WriteAsync(data, cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            // Kullanıcının veya sayfanın isteği iptal etmesi ağ hatası değildir.
+            throw;
         }
         catch
         {
@@ -158,8 +161,16 @@ public sealed class TcpClientService : ITcpClientService
 
             return receivedByteCount;
         }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            // Master sayfasından çıkılırken receive-loop iptal edilir.
+            // Bu normal iptal TCP bağlantısının koptuğu anlamına gelmez.
+            throw;
+        }
         catch
         {
+            // Yalnızca gerçek ağ/stream hataları bağlantıyı kopmuş sayar.
             SetConnectionState(false);
             throw;
         }
@@ -214,7 +225,6 @@ public sealed class TcpClientService : ITcpClientService
         }
 
         client?.Dispose();
-
         SetConnectionState(false);
     }
 
@@ -275,4 +285,4 @@ public sealed class TcpClientService : ITcpClientService
                 nameof(TcpClientService));
         }
     }
-}   
+}
