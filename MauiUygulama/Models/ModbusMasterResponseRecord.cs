@@ -6,6 +6,8 @@ public sealed class ModbusMasterResponseRecord
 
     public byte UnitId { get; init; }
 
+    public byte FunctionCode { get; init; }
+
     public ushort? StartAddress { get; init; }
 
     public ushort[] RegisterValues { get; init; } =
