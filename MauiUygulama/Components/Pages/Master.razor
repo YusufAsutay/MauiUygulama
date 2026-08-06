@@ -1,6 +1,5 @@
-﻿@* FC03 + FC04 tam Master ekranı *@
+﻿@* Güncel merkezî Master işlem ekranı — 06.08.2026 *@
 @page "/master"
-@using System.Text
 @using MauiUygulama.Core.Interfaces
 @using MauiUygulama.Models
 
@@ -9,13 +8,19 @@
 @inject ITcpClientService TcpClient
 @inject IModbusMasterResponseStore ResponseStore
 
-<PageTitle>Master Modu</PageTitle>
+<PageTitle>Merkezî Master Modu</PageTitle>
 
 <div class="container mt-4">
-    <h1>Master Modu</h1>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h1 class="mb-0">Merkezî Master Modu</h1>
 
-    <p class="text-muted">
-        Bağlanılacak TCP sunucusunun IP adresini ve portunu giriniz.
+        <span class="badge bg-dark">
+            FC01 · FC03 · FC06
+        </span>
+    </div>
+
+    <p class="text-muted mt-2">
+        TCP bağlantısı ve bütün Modbus işlemleri bu ekran üzerinden yönetilir.
     </p>
 
     <div class="card shadow-sm mt-4">
@@ -98,14 +103,35 @@
 
     <div class="card shadow-sm mt-4">
         <div class="card-body">
-            <h5 class="card-title">Holding Register Oku (Function 03)</h5>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="card-title mb-0">Modbus İşlemi</h5>
 
-            <p class="text-muted">
-                Slave tarafına gerçek bir Modbus TCP Holding Register okuma isteği gönderir.
+                <span class="badge bg-primary">
+                    Function @_selectedFunctionCode.ToString("X2")
+                </span>
+            </div>
+
+            <p class="text-muted mt-2">
+                Okuma ve yazma işlemleri bu tek panelden yönetilir.
             </p>
 
             <div class="row">
-                <div class="col-md-4 mb-3">
+                <div class="col-md-3 mb-3">
+                    <label for="functionCode" class="form-label">
+                        Function ID
+                    </label>
+
+                    <select id="functionCode"
+                            class="form-select"
+                            @bind="_selectedFunctionCode"
+                            disabled="@_isBusy">
+                        <option value="1">01 — Read Coils</option>
+                        <option value="3">03 — Read Holding Registers</option>
+                        <option value="6">06 — Write Single Register</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3 mb-3">
                     <label for="unitId" class="form-label">
                         Unit ID
                     </label>
@@ -119,39 +145,66 @@
                            disabled="@(_isBusy || !TcpClient.IsConnected)" />
                 </div>
 
-                <div class="col-md-4 mb-3">
-                    <label for="startingAddress" class="form-label">
-                        Başlangıç Adresi
+                <div class="col-md-3 mb-3">
+                    <label for="operationAddress" class="form-label">
+                        @AddressLabel
                     </label>
 
-                    <input id="startingAddress"
+                    <input id="operationAddress"
                            class="form-control"
                            type="number"
                            min="0"
                            max="65535"
-                           @bind="_startingAddress"
+                           @bind="_operationAddress"
                            disabled="@(_isBusy || !TcpClient.IsConnected)" />
                 </div>
 
-                <div class="col-md-4 mb-3">
-                    <label for="registerQuantity" class="form-label">
-                        Register Miktarı
-                    </label>
+                <div class="col-md-3 mb-3">
+                    @if (_selectedFunctionCode == WriteSingleRegisterFunctionCode)
+                    {
+                        <label for="writeValue" class="form-label">
+                            Yazılacak Değer
+                        </label>
 
-                    <input id="registerQuantity"
-                           class="form-control"
-                           type="number"
-                           min="1"
-                           max="125"
-                           @bind="_registerQuantity"
-                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                        <input id="writeValue"
+                               class="form-control"
+                               type="number"
+                               min="0"
+                               max="65535"
+                               @bind="_writeValue"
+                               disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                    }
+                    else
+                    {
+                        <label for="quantity" class="form-label">
+                            @QuantityLabel
+                        </label>
+
+                        <input id="quantity"
+                               class="form-control"
+                               type="number"
+                               min="1"
+                               max="@MaximumQuantity"
+                               @bind="_quantity"
+                               disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                    }
                 </div>
             </div>
 
+            @if (!IsSelectedFunctionImplemented)
+            {
+                <div class="alert alert-info">
+                    @SelectedFunctionName için merkezî arayüz hazırlandı.
+                    Haberleşme kodu sonraki adımda eklenecek.
+                </div>
+            }
+
             <button class="btn btn-primary"
-                    @onclick="SendReadHoldingRegistersRequestAsync"
-                    disabled="@(_isBusy || !TcpClient.IsConnected)">
-                Holding Register Oku
+                    @onclick="SendSelectedOperationAsync"
+                    disabled="@(_isBusy ||
+                                                !TcpClient.IsConnected ||
+                                                !IsSelectedFunctionImplemented)">
+                İşlemi Gönder
             </button>
 
             @if (!string.IsNullOrWhiteSpace(_lastModbusRequestHex))
@@ -165,84 +218,7 @@
 
                     <div class="mt-2 text-muted">
                         Transaction ID: @_lastTransactionId,
-                        Function Code: 03,
-                        Toplam: 12 byte
-                    </div>
-                </div>
-            }
-        </div>
-    </div>
-
-    <div class="card shadow-sm mt-4">
-        <div class="card-body">
-            <h5 class="card-title">Input Register Oku (Function 04)</h5>
-
-            <p class="text-muted">
-                Slave tarafına gerçek bir Modbus TCP Input Register okuma isteği gönderir.
-            </p>
-
-            <div class="row">
-                <div class="col-md-4 mb-3">
-                    <label for="inputUnitId" class="form-label">
-                        Unit ID
-                    </label>
-
-                    <input id="inputUnitId"
-                           class="form-control"
-                           type="number"
-                           min="0"
-                           max="255"
-                           @bind="_unitId"
-                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
-                </div>
-
-                <div class="col-md-4 mb-3">
-                    <label for="inputStartingAddress" class="form-label">
-                        Başlangıç Adresi
-                    </label>
-
-                    <input id="inputStartingAddress"
-                           class="form-control"
-                           type="number"
-                           min="0"
-                           max="65535"
-                           @bind="_inputStartingAddress"
-                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
-                </div>
-
-                <div class="col-md-4 mb-3">
-                    <label for="inputRegisterQuantity" class="form-label">
-                        Register Miktarı
-                    </label>
-
-                    <input id="inputRegisterQuantity"
-                           class="form-control"
-                           type="number"
-                           min="1"
-                           max="125"
-                           @bind="_inputRegisterQuantity"
-                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
-                </div>
-            </div>
-
-            <button class="btn btn-success"
-                    @onclick="SendReadInputRegistersRequestAsync"
-                    disabled="@(_isBusy || !TcpClient.IsConnected)">
-                Input Register Oku
-            </button>
-
-            @if (!string.IsNullOrWhiteSpace(_lastInputRegisterRequestHex))
-            {
-                <div class="mt-3">
-                    <strong>Gönderilen Modbus TCP isteği:</strong>
-
-                    <div class="border rounded bg-dark text-light p-2 mt-1 font-monospace">
-                        @_lastInputRegisterRequestHex
-                    </div>
-
-                    <div class="mt-2 text-muted">
-                        Transaction ID: @_lastInputTransactionId,
-                        Function Code: 04,
+                        Function Code: @_lastFunctionCode.ToString("X2"),
                         Toplam: 12 byte
                     </div>
                 </div>
@@ -254,7 +230,7 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">
-                    Alınan Register Cevapları
+                    İşlem Sonuçları
                 </h5>
 
                 <button class="btn btn-sm btn-outline-danger"
@@ -267,7 +243,7 @@
             @if (ResponseStore.Items.Count == 0)
             {
                 <div class="alert alert-secondary mt-3 mb-0">
-                    Henüz Slave tarafından bir register cevabı alınmadı.
+                    Henüz Slave tarafından bir Modbus cevabı alınmadı.
                 </div>
             }
             else
@@ -294,7 +270,7 @@
                             <div class="col-md-4">
                                 <strong>Function Code:</strong>
                                 @response.FunctionCode.ToString("X2")
-                                — @GetRegisterTypeName(response.FunctionCode)
+                                — @GetFunctionName(response.FunctionCode)
                             </div>
 
                             <div class="col-md-4">
@@ -346,71 +322,25 @@
         </div>
     </div>
 
-    <div class="card shadow-sm mt-4">
-        <div class="card-body">
-            <h5 class="card-title">Ham TCP Deneme Verisi Gönder</h5>
-
-            <p class="text-muted">
-                Bu bölüm yalnızca temel TCP testi içindir; gönderilen metin Modbus paketi değildir.
-            </p>
-
-            <div class="mb-3">
-                <label for="outgoingText" class="form-label">
-                    Gönderilecek Metin
-                </label>
-
-                <textarea id="outgoingText"
-                          class="form-control"
-                          rows="3"
-                          @bind="_outgoingText"
-                          disabled="@(_isBusy || !TcpClient.IsConnected)">
-                </textarea>
-            </div>
-
-            <button class="btn btn-outline-primary"
-                    @onclick="SendTestDataAsync"
-                    disabled="@(_isBusy ||
-                                                !TcpClient.IsConnected ||
-                                                string.IsNullOrWhiteSpace(_outgoingText))">
-                Ham Veriyi Gönder
-            </button>
-
-            @if (!string.IsNullOrWhiteSpace(_lastSentHex))
-            {
-                <div class="mt-3">
-                    <strong>Gönderilen ham verinin HEX değeri:</strong>
-
-                    <div class="border rounded bg-light p-2 mt-1 font-monospace">
-                        @_lastSentHex
-                    </div>
-                </div>
-            }
-        </div>
-    </div>
-
     <a class="btn btn-secondary mt-3" href="/">
         Mod Seçimine Dön
     </a>
 </div>
 
 @code {
+    private const byte ReadCoilsFunctionCode = 0x01;
     private const byte ReadHoldingRegistersFunctionCode = 0x03;
-    private const byte ReadInputRegistersFunctionCode = 0x04;
+    private const byte WriteSingleRegisterFunctionCode = 0x06;
 
-    private string _outgoingText = "Merhaba Slave";
-    private string? _lastSentHex;
-
+    private byte _selectedFunctionCode = ReadHoldingRegistersFunctionCode;
     private byte _unitId = 1;
-    private ushort _startingAddress;
-    private ushort _registerQuantity = 10;
+    private ushort _operationAddress;
+    private ushort _quantity = 10;
+    private ushort _writeValue;
     private ushort _nextTransactionId = 1;
     private ushort _lastTransactionId;
+    private byte _lastFunctionCode;
     private string? _lastModbusRequestHex;
-
-    private ushort _inputStartingAddress;
-    private ushort _inputRegisterQuantity = 4;
-    private ushort _lastInputTransactionId;
-    private string? _lastInputRegisterRequestHex;
 
     private readonly Dictionary<ushort, PendingReadRequest> _pendingReadRequests = new();
     private readonly object _pendingRequestsLock = new();
@@ -438,24 +368,52 @@
         }
     }
 
-    private async Task SendReadHoldingRegistersRequestAsync()
-    {
-        await SendReadRegistersRequestAsync(
-            ReadHoldingRegistersFunctionCode,
-            _startingAddress,
-            _registerQuantity);
-    }
+    private bool IsSelectedFunctionImplemented =>
+        _selectedFunctionCode == ReadHoldingRegistersFunctionCode;
 
-    private async Task SendReadInputRegistersRequestAsync()
+    private string SelectedFunctionName =>
+        GetFunctionName(_selectedFunctionCode);
+
+    private string AddressLabel =>
+        _selectedFunctionCode == ReadCoilsFunctionCode
+            ? "Başlangıç Coil Adresi"
+            : "Register Adresi";
+
+    private string QuantityLabel =>
+        _selectedFunctionCode == ReadCoilsFunctionCode
+            ? "Coil Miktarı"
+            : "Register Miktarı";
+
+    private int MaximumQuantity =>
+        _selectedFunctionCode == ReadCoilsFunctionCode
+            ? 2000
+            : 125;
+
+    private async Task SendSelectedOperationAsync()
     {
-        await SendReadRegistersRequestAsync(
-            ReadInputRegistersFunctionCode,
-            _inputStartingAddress,
-            _inputRegisterQuantity);
+        switch (_selectedFunctionCode)
+        {
+            case ReadHoldingRegistersFunctionCode:
+                await SendReadRegistersRequestAsync(
+                    _operationAddress,
+                    _quantity);
+                break;
+
+            case ReadCoilsFunctionCode:
+            case WriteSingleRegisterFunctionCode:
+                _isError = false;
+                _message =
+                    $"{SelectedFunctionName} haberleşmesi sonraki adımda eklenecek.";
+                break;
+
+            default:
+                _isError = true;
+                _message = "Desteklenmeyen Function ID seçildi.";
+                break;
+        }
     }
 
     private async Task SendReadRegistersRequestAsync(
-        byte functionCode,
         ushort startingAddress,
         ushort registerQuantity)
     {
@@ -498,14 +456,14 @@
             byte[] request = CreateReadRegistersRequest(
                 transactionId,
                 _unitId,
-                functionCode,
+                ReadHoldingRegistersFunctionCode,
                 startingAddress,
                 registerQuantity);
 
             lock (_pendingRequestsLock)
             {
                 _pendingReadRequests[transactionId] = new PendingReadRequest(
-                    functionCode,
+                    ReadHoldingRegistersFunctionCode,
                     startingAddress,
                     registerQuantity);
             }
@@ -528,19 +486,12 @@
                 .ToString(request)
                 .Replace("-", " ");
 
-            if (functionCode == ReadHoldingRegistersFunctionCode)
-            {
-                _lastTransactionId = transactionId;
-                _lastModbusRequestHex = requestHex;
-            }
-            else
-            {
-                _lastInputTransactionId = transactionId;
-                _lastInputRegisterRequestHex = requestHex;
-            }
+            _lastTransactionId = transactionId;
+            _lastFunctionCode = ReadHoldingRegistersFunctionCode;
+            _lastModbusRequestHex = requestHex;
 
             _message =
-                $"Function {functionCode:X2} isteği gönderildi. " +
+                "Function 03 isteği gönderildi. " +
                 $"Başlangıç adresi: {startingAddress}, " +
                 $"register miktarı: {registerQuantity}.";
         }
@@ -585,49 +536,6 @@
     {
         destination[index] = (byte)(value >> 8);
         destination[index + 1] = (byte)value;
-    }
-
-    private async Task SendTestDataAsync()
-    {
-        if (!TcpClient.IsConnected)
-        {
-            _isError = true;
-            _message = "Önce Slave sunucusuna bağlanmalısınız.";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_outgoingText))
-        {
-            _isError = true;
-            _message = "Gönderilecek metin boş olamaz.";
-            return;
-        }
-
-        _isBusy = true;
-        _isError = false;
-        _message = null;
-
-        try
-        {
-            byte[] data = Encoding.UTF8.GetBytes(_outgoingText);
-
-            await TcpClient.SendAsync(data);
-
-            _lastSentHex = BitConverter
-                .ToString(data)
-                .Replace("-", " ");
-
-            _message = $"{data.Length} byte ham TCP verisi gönderildi.";
-        }
-        catch (Exception exception)
-        {
-            _isError = true;
-            _message = $"Veri gönderilemedi: {exception.Message}";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
     }
 
     private async Task ConnectAsync()
@@ -833,8 +741,7 @@
             return;
         }
 
-        if (functionCode != ReadHoldingRegistersFunctionCode &&
-            functionCode != ReadInputRegistersFunctionCode)
+        if (functionCode != ReadHoldingRegistersFunctionCode)
         {
             await ShowResponseErrorAsync(
                 $"Beklenmeyen Function Code alındı: 0x{functionCode:X2}.");
@@ -906,7 +813,7 @@
             _message =
                 $"Transaction ID {transactionId} cevabı alındı: " +
                 $"{registerValues.Length} " +
-                $"{GetRegisterTypeName(functionCode)} okundu.";
+                $"{GetFunctionName(functionCode)} tamamlandı.";
 
             StateHasChanged();
         });
@@ -976,13 +883,14 @@
         };
     }
 
-    private static string GetRegisterTypeName(byte functionCode)
+    private static string GetFunctionName(byte functionCode)
     {
         return functionCode switch
         {
+            ReadCoilsFunctionCode => "Read Coils",
             ReadHoldingRegistersFunctionCode => "Holding Register",
-            ReadInputRegistersFunctionCode => "Input Register",
-            _ => "Bilinmeyen register"
+            WriteSingleRegisterFunctionCode => "Write Single Register",
+            _ => "Bilinmeyen fonksiyon"
         };
     }
 

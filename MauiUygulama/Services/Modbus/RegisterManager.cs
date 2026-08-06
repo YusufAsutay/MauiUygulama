@@ -9,7 +9,6 @@ public sealed class RegisterManager : IRegisterManager
     private readonly object _syncRoot = new();
     private readonly bool[] _coils = new bool[ModbusAddressCount];
     private readonly bool[] _discreteInputs = new bool[ModbusAddressCount];
-    private readonly ushort[] _inputRegisters = new ushort[ModbusAddressCount];
     private readonly ushort[] _holdingRegisters = new ushort[ModbusAddressCount];
 
     public RegisterManager()
@@ -18,6 +17,8 @@ public sealed class RegisterManager : IRegisterManager
     }
 
     public int RegisterCount => ModbusAddressCount;
+
+    public event Action? RegistersChanged;
 
     public bool[] ReadCoils(
         ushort startAddress,
@@ -35,16 +36,6 @@ public sealed class RegisterManager : IRegisterManager
     {
         return ReadRange(
             _discreteInputs,
-            startAddress,
-            quantity);
-    }
-
-    public ushort[] ReadInputRegisters(
-        ushort startAddress,
-        ushort quantity)
-    {
-        return ReadRange(
-            _inputRegisters,
             startAddress,
             quantity);
     }
@@ -109,16 +100,6 @@ public sealed class RegisterManager : IRegisterManager
             value);
     }
 
-    public void SetInputRegister(
-        ushort address,
-        ushort value)
-    {
-        WriteSingleValue(
-            _inputRegisters,
-            address,
-            value);
-    }
-
     private T[] ReadRange<T>(
         T[] source,
         ushort startAddress,
@@ -153,6 +134,8 @@ public sealed class RegisterManager : IRegisterManager
         {
             target[address] = value;
         }
+
+        RegistersChanged?.Invoke();
     }
 
     private void WriteRange<T>(
@@ -181,6 +164,8 @@ public sealed class RegisterManager : IRegisterManager
                 target[startAddress + index] = values[index];
             }
         }
+
+        RegistersChanged?.Invoke();
     }
 
     private static void ValidateRange(
@@ -211,9 +196,6 @@ public sealed class RegisterManager : IRegisterManager
         _holdingRegisters[1] = 250;
         _holdingRegisters[2] = 500;
         _holdingRegisters[3] = 1000;
-
-        _inputRegisters[0] = 25;
-        _inputRegisters[1] = 50;
 
         _coils[0] = true;
         _discreteInputs[0] = true;
