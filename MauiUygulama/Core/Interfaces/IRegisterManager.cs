@@ -1,10 +1,12 @@
-﻿namespace MauiUygulama.Core.Interfaces;
+﻿using MauiUygulama.Models;
+
+namespace MauiUygulama.Core.Interfaces;
 
 public interface IRegisterManager
 {
     int RegisterCount { get; }
 
-    event Action? RegistersChanged;
+    event Action<RegisterValueChangedEventArgs>? ValueChanged;
 
     bool[] ReadCoils(
         ushort startAddress,

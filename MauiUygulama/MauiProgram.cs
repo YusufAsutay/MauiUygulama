@@ -41,15 +41,20 @@ public static class MauiProgram
             ModbusFrameStore>();
 
         builder.Services.AddSingleton<
+            IModbusMasterResponseStore,
+            ModbusMasterResponseStore>();
+
+        builder.Services.AddSingleton<
             IRegisterManager,
             RegisterManager>();
 
         builder.Services.AddSingleton<
+            ISlaveRegisterViewStore,
+            SlaveRegisterViewStore>();
+
+        builder.Services.AddSingleton<
             IModbusRequestProcessor,
             ModbusRequestProcessor>();
-        builder.Services.AddSingleton<
-            IModbusMasterResponseStore,
-            ModbusMasterResponseStore>();
 
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();

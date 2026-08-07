@@ -1,9 +1,12 @@
 ﻿using MauiUygulama.Core.Interfaces;
+using MauiUygulama.Models;
 
 namespace MauiUygulama.Services.Modbus;
 
 public sealed class RegisterManager : IRegisterManager
 {
+    // Modbus adresleri ushort olduğundan her veri alanı 0-65535
+    // arasındaki toplam 65.536 adresi destekler.
     private const int ModbusAddressCount = ushort.MaxValue + 1;
 
     private readonly object _syncRoot = new();
@@ -11,14 +14,9 @@ public sealed class RegisterManager : IRegisterManager
     private readonly bool[] _discreteInputs = new bool[ModbusAddressCount];
     private readonly ushort[] _holdingRegisters = new ushort[ModbusAddressCount];
 
-    public RegisterManager()
-    {
-        LoadInitialTestValues();
-    }
-
     public int RegisterCount => ModbusAddressCount;
 
-    public event Action? RegistersChanged;
+    public event Action<RegisterValueChangedEventArgs>? ValueChanged;
 
     public bool[] ReadCoils(
         ushort startAddress,
@@ -57,7 +55,9 @@ public sealed class RegisterManager : IRegisterManager
         WriteSingleValue(
             _coils,
             address,
-            value);
+            value,
+            RegisterArea.Coil,
+            value ? (ushort)1 : (ushort)0);
     }
 
     public void WriteMultipleCoils(
@@ -67,7 +67,9 @@ public sealed class RegisterManager : IRegisterManager
         WriteRange(
             _coils,
             startAddress,
-            values);
+            values,
+            RegisterArea.Coil,
+            static value => value ? (ushort)1 : (ushort)0);
     }
 
     public void WriteSingleHoldingRegister(
@@ -77,6 +79,8 @@ public sealed class RegisterManager : IRegisterManager
         WriteSingleValue(
             _holdingRegisters,
             address,
+            value,
+            RegisterArea.HoldingRegister,
             value);
     }
 
@@ -87,7 +91,9 @@ public sealed class RegisterManager : IRegisterManager
         WriteRange(
             _holdingRegisters,
             startAddress,
-            values);
+            values,
+            RegisterArea.HoldingRegister,
+            static value => value);
     }
 
     public void SetDiscreteInput(
@@ -97,7 +103,9 @@ public sealed class RegisterManager : IRegisterManager
         WriteSingleValue(
             _discreteInputs,
             address,
-            value);
+            value,
+            RegisterArea.DiscreteInput,
+            value ? (ushort)1 : (ushort)0);
     }
 
     private T[] ReadRange<T>(
@@ -128,20 +136,37 @@ public sealed class RegisterManager : IRegisterManager
     private void WriteSingleValue<T>(
         T[] target,
         ushort address,
-        T value)
+        T value,
+        RegisterArea area,
+        ushort eventValue)
     {
+        bool changed;
+
         lock (_syncRoot)
         {
+            changed = !EqualityComparer<T>.Default.Equals(
+                target[address],
+                value);
+
             target[address] = value;
         }
 
-        RegistersChanged?.Invoke();
+        if (changed)
+        {
+            ValueChanged?.Invoke(
+                new RegisterValueChangedEventArgs(
+                    area,
+                    address,
+                    eventValue));
+        }
     }
 
     private void WriteRange<T>(
         T[] target,
         ushort startAddress,
-        IReadOnlyList<T> values)
+        IReadOnlyList<T> values,
+        RegisterArea area,
+        Func<T, ushort> eventValueSelector)
     {
         ArgumentNullException.ThrowIfNull(values);
 
@@ -157,15 +182,36 @@ public sealed class RegisterManager : IRegisterManager
             values.Count,
             nameof(values));
 
+        var changes = new List<RegisterValueChangedEventArgs>();
+
         lock (_syncRoot)
         {
             for (int index = 0; index < values.Count; index++)
             {
-                target[startAddress + index] = values[index];
+                int targetAddress = startAddress + index;
+                T newValue = values[index];
+
+                if (EqualityComparer<T>.Default.Equals(
+                        target[targetAddress],
+                        newValue))
+                {
+                    continue;
+                }
+
+                target[targetAddress] = newValue;
+
+                changes.Add(
+                    new RegisterValueChangedEventArgs(
+                        area,
+                        (ushort)targetAddress,
+                        eventValueSelector(newValue)));
             }
         }
 
-        RegistersChanged?.Invoke();
+        foreach (RegisterValueChangedEventArgs change in changes)
+        {
+            ValueChanged?.Invoke(change);
+        }
     }
 
     private static void ValidateRange(
@@ -190,14 +236,4 @@ public sealed class RegisterManager : IRegisterManager
         }
     }
 
-    private void LoadInitialTestValues()
-    {
-        _holdingRegisters[0] = 100;
-        _holdingRegisters[1] = 250;
-        _holdingRegisters[2] = 500;
-        _holdingRegisters[3] = 1000;
-
-        _coils[0] = true;
-        _discreteInputs[0] = true;
-    }
 }

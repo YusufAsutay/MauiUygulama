@@ -357,7 +357,7 @@
         TcpServer.ServerError += OnServerError;
 
         ModbusFrameStore.DataChanged += OnModbusFrameStoreChanged;
-        RegisterManager.RegistersChanged += OnRegistersChanged;
+        RegisterManager.ValueChanged += OnRegisterValueChanged;
 
         RefreshModbusFrames();
         RefreshRegisterRows();
@@ -540,7 +540,8 @@
         _registerMessage = message;
     }
 
-    private void OnRegistersChanged()
+    private void OnRegisterValueChanged(
+        RegisterValueChangedEventArgs change)
     {
         _ = InvokeAsync(() =>
         {
@@ -633,7 +634,7 @@
         TcpServer.ServerError -= OnServerError;
 
         ModbusFrameStore.DataChanged -= OnModbusFrameStoreChanged;
-        RegisterManager.RegistersChanged -= OnRegistersChanged;
+        RegisterManager.ValueChanged -= OnRegisterValueChanged;
     }
 
     private enum RegisterTable
