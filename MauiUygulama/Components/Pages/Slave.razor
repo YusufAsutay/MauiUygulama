@@ -1,4 +1,4 @@
-﻿@* Merkezî ve interaktif Slave ekranı — düzeltilmiş sürüm 2 *@
+﻿@* Merkezî Slave ekranı — filtreleme, sıralama ve güvenli temizleme sürümü *@
 @page "/slave"
 
 @using MauiUygulama.Core.Interfaces
@@ -116,22 +116,99 @@
                     </small>
                 </div>
 
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-primary">@_registerRows.Count adres</span>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="badge bg-primary">
+                        @VisibleRegisterRows.Count / @_registerRows.Count adres gösteriliyor
+                    </span>
                     <button class="btn btn-sm btn-outline-primary"
                             @onclick="RefreshRegisterRows">
                         Değerleri Yenile
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger"
+                            @onclick="ShowClearTrackedRegistersConfirmation"
+                            disabled="@(_registerRows.Count == 0)">
+                        Takip Edilen Adresleri Temizle
                     </button>
                 </div>
             </div>
         </div>
 
         <div class="card-body">
+            <div class="row g-3 align-items-end mb-3">
+                <div class="col-lg-4 col-md-6">
+                    <label for="registerTypeFilter" class="form-label">
+                        Register Türü
+                    </label>
+                    <select id="registerTypeFilter"
+                            class="form-select"
+                            @bind="_registerFilter">
+                        <option value="@RegisterFilter.All">Tüm Türler</option>
+                        <option value="@RegisterFilter.Coil">Yalnızca Coil</option>
+                        <option value="@RegisterFilter.HoldingRegister">
+                            Yalnızca Holding Register
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <label for="registerSortOrder" class="form-label">
+                        Sıralama
+                    </label>
+                    <select id="registerSortOrder"
+                            class="form-select"
+                            @bind="_registerSortOrder">
+                        <option value="@RegisterSortOrder.AddressAscending">
+                            Adres — Küçükten Büyüğe
+                        </option>
+                        <option value="@RegisterSortOrder.AddressDescending">
+                            Adres — Büyükten Küçüğe
+                        </option>
+                        <option value="@RegisterSortOrder.LastAccessedDescending">
+                            Son Erişim — Yeniden Eskiye
+                        </option>
+                        <option value="@RegisterSortOrder.LastAccessedAscending">
+                            Son Erişim — Eskiden Yeniye
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-lg-4">
+                    <button class="btn btn-outline-secondary w-100"
+                            @onclick="ResetRegisterViewOptions"
+                            disabled="@IsRegisterViewAtDefault">
+                        Filtre ve Sıralamayı Sıfırla
+                    </button>
+                </div>
+            </div>
+
             @if (!string.IsNullOrWhiteSpace(_registerMessage))
             {
                 <div class="alert @(_isRegisterError ? "alert-danger" : "alert-success") py-2"
                      role="alert">
                     @_registerMessage
+                </div>
+            }
+
+            @if (_showClearTrackedRegistersConfirmation)
+            {
+                <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3"
+                     role="alert">
+                    <div>
+                        <strong>Takip edilen adresler tablodan kaldırılsın mı?</strong>
+                        <div class="small mt-1">
+                            Coil ve Holding Register değerleri silinmez; yalnızca görünür adres listesi temizlenir.
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-danger"
+                                @onclick="ConfirmClearTrackedRegisters">
+                            Evet, Listeyi Temizle
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="CancelClearTrackedRegisters">
+                            Vazgeç
+                        </button>
+                    </div>
                 </div>
             }
 
@@ -158,9 +235,17 @@
                                 </td>
                             </tr>
                         }
+                        else if (VisibleRegisterRows.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    Seçilen register türüne uyan takip edilmiş bir adres bulunamadı.
+                                </td>
+                            </tr>
+                        }
                         else
                         {
-                            @foreach (SlaveRegisterRow row in _registerRows)
+                            @foreach (SlaveRegisterRow row in VisibleRegisterRows)
                             {
                                 <tr @key="GetRowKey(row)">
                                     <td>@GetAreaName(row.Area)</td>
@@ -207,18 +292,48 @@
             <div class="d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Son Modbus İstekleri</h5>
                 <button class="btn btn-sm btn-outline-danger"
-                        @onclick="ClearModbusFrames"
+                        @onclick="ShowClearHistoryConfirmation"
                         disabled="@(_modbusFrames.Count == 0)">
-                    Geçmişi Temizle
+                    İstek Geçmişini Temizle
                 </button>
             </div>
         </div>
 
         <div class="card-body">
+            @if (!string.IsNullOrWhiteSpace(_modbusFrameMessage))
+            {
+                <div class="alert alert-success" role="alert">
+                    @_modbusFrameMessage
+                </div>
+            }
+
             @if (!string.IsNullOrWhiteSpace(_modbusFrameError))
             {
                 <div class="alert alert-danger" role="alert">
                     @_modbusFrameError
+                </div>
+            }
+
+            @if (_showClearHistoryConfirmation)
+            {
+                <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3"
+                     role="alert">
+                    <div>
+                        <strong>Modbus istek geçmişi temizlensin mi?</strong>
+                        <div class="small mt-1">
+                            Bu işlem register tablosunu ve Slave değerlerini etkilemez.
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-danger"
+                                @onclick="ConfirmClearModbusFrames">
+                            Evet, Geçmişi Temizle
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="CancelClearHistory">
+                            Vazgeç
+                        </button>
+                    </div>
                 </div>
             }
 
@@ -274,6 +389,9 @@
     private IReadOnlyList<SlaveRegisterRow> _registerRows =
         Array.Empty<SlaveRegisterRow>();
 
+    private RegisterFilter _registerFilter = RegisterFilter.All;
+    private RegisterSortOrder _registerSortOrder = RegisterSortOrder.AddressAscending;
+
     private readonly TcpServerSettings _settings = new()
     {
         IpAddress = "127.0.0.1",
@@ -285,9 +403,58 @@
     private bool _isBusy;
     private bool _isServerError;
     private bool _isRegisterError;
+    private bool _showClearTrackedRegistersConfirmation;
+    private bool _showClearHistoryConfirmation;
     private string? _serverMessage;
     private string? _registerMessage;
     private string? _modbusFrameError;
+    private string? _modbusFrameMessage;
+
+    private IReadOnlyList<SlaveRegisterRow> VisibleRegisterRows
+    {
+        get
+        {
+            IEnumerable<SlaveRegisterRow> query = _registerRows;
+
+            query = _registerFilter switch
+            {
+                RegisterFilter.Coil =>
+                    query.Where(row => row.Area == RegisterArea.Coil),
+
+                RegisterFilter.HoldingRegister =>
+                    query.Where(row => row.Area == RegisterArea.HoldingRegister),
+
+                _ => query
+            };
+
+            query = _registerSortOrder switch
+            {
+                RegisterSortOrder.AddressDescending =>
+                    query.OrderByDescending(row => row.Address)
+                         .ThenBy(row => row.Area),
+
+                RegisterSortOrder.LastAccessedDescending =>
+                    query.OrderByDescending(row => row.LastAccessedUtc)
+                         .ThenBy(row => row.Area)
+                         .ThenBy(row => row.Address),
+
+                RegisterSortOrder.LastAccessedAscending =>
+                    query.OrderBy(row => row.LastAccessedUtc)
+                         .ThenBy(row => row.Area)
+                         .ThenBy(row => row.Address),
+
+                _ =>
+                    query.OrderBy(row => row.Address)
+                         .ThenBy(row => row.Area)
+            };
+
+            return query.ToArray();
+        }
+    }
+
+    private bool IsRegisterViewAtDefault =>
+        _registerFilter == RegisterFilter.All &&
+        _registerSortOrder == RegisterSortOrder.AddressAscending;
 
     protected override void OnInitialized()
     {
@@ -361,6 +528,33 @@
     private void RefreshRegisterRows()
     {
         _registerRows = SlaveRegisterViewStore.GetRows();
+    }
+
+    private void ResetRegisterViewOptions()
+    {
+        _registerFilter = RegisterFilter.All;
+        _registerSortOrder = RegisterSortOrder.AddressAscending;
+    }
+
+    private void ShowClearTrackedRegistersConfirmation()
+    {
+        _showClearTrackedRegistersConfirmation = true;
+        _registerMessage = null;
+    }
+
+    private void CancelClearTrackedRegisters()
+    {
+        _showClearTrackedRegistersConfirmation = false;
+    }
+
+    private void ConfirmClearTrackedRegisters()
+    {
+        int clearedRowCount = _registerRows.Count;
+
+        SlaveRegisterViewStore.Clear();
+        _showClearTrackedRegistersConfirmation = false;
+        SetRegisterSuccess(
+            $"{clearedRowCount} takip edilen adres tablodan kaldırıldı. Register değerleri korunuyor.");
     }
 
     private void UpdateCoil(ushort address, ChangeEventArgs args)
@@ -471,11 +665,33 @@
     {
         _modbusFrames = ModbusFrameStore.Items;
         _modbusFrameError = ModbusFrameStore.LastError;
+
+        if (_modbusFrames.Count > 0)
+        {
+            _modbusFrameMessage = null;
+            _showClearHistoryConfirmation = false;
+        }
     }
 
-    private void ClearModbusFrames()
+    private void ShowClearHistoryConfirmation()
     {
+        _showClearHistoryConfirmation = true;
+        _modbusFrameMessage = null;
+    }
+
+    private void CancelClearHistory()
+    {
+        _showClearHistoryConfirmation = false;
+    }
+
+    private void ConfirmClearModbusFrames()
+    {
+        int clearedFrameCount = _modbusFrames.Count;
+
         ModbusFrameStore.Clear();
+        _showClearHistoryConfirmation = false;
+        _modbusFrameMessage =
+            $"{clearedFrameCount} Modbus istek kaydı temizlendi. Register tablosu ve değerler korunuyor.";
     }
 
     private static string GetAddressText(ModbusFrameRecord item)
@@ -523,5 +739,20 @@
     private static string GetRowKey(SlaveRegisterRow row)
     {
         return $"{row.Area}:{row.Address}";
+    }
+
+    private enum RegisterFilter
+    {
+        All,
+        Coil,
+        HoldingRegister
+    }
+
+    private enum RegisterSortOrder
+    {
+        AddressAscending,
+        AddressDescending,
+        LastAccessedDescending,
+        LastAccessedAscending
     }
 }

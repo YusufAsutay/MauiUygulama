@@ -1,11 +1,10 @@
-﻿@* Güncel merkezî Master işlem ekranı — 06.08.2026 *@
-@page "/master"
+﻿@page "/master"
 @using MauiUygulama.Core.Interfaces
 @using MauiUygulama.Models
 
 @implements IDisposable
 
-@inject ITcpClientService TcpClient
+@inject IModbusMasterService ModbusMaster
 @inject IModbusMasterResponseStore ResponseStore
 
 <PageTitle>Merkezî Master Modu</PageTitle>
@@ -13,10 +12,7 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h1 class="mb-0">Merkezî Master Modu</h1>
-
-        <span class="badge bg-dark">
-            FC01 · FC03 · FC06
-        </span>
+        <span class="badge bg-dark">FC01 · FC03 · FC06</span>
     </div>
 
     <p class="text-muted mt-2">
@@ -25,68 +21,52 @@
 
     <div class="card shadow-sm mt-4">
         <div class="card-body">
-
             <div class="mb-3">
-                <label for="ipAddress" class="form-label">
-                    IP Adresi
-                </label>
-
+                <label for="ipAddress" class="form-label">IP Adresi</label>
                 <input id="ipAddress"
                        class="form-control"
                        type="text"
                        placeholder="127.0.0.1"
                        @bind="_settings.IpAddress"
-                       disabled="@(_isBusy || TcpClient.IsConnected)" />
+                       disabled="@(_isBusy || ModbusMaster.IsConnected)" />
             </div>
 
             <div class="mb-3">
-                <label for="port" class="form-label">
-                    Port
-                </label>
-
+                <label for="port" class="form-label">Port</label>
                 <input id="port"
                        class="form-control"
                        type="number"
                        min="1"
                        max="65535"
                        @bind="_settings.Port"
-                       disabled="@(_isBusy || TcpClient.IsConnected)" />
+                       disabled="@(_isBusy || ModbusMaster.IsConnected)" />
             </div>
 
             <div class="mb-3">
                 <strong>Bağlantı durumu: </strong>
 
-                @if (TcpClient.IsConnected)
+                @if (ModbusMaster.IsConnected)
                 {
-                    <span class="badge bg-success">
-                        Bağlı
-                    </span>
+                    <span class="badge bg-success">Bağlı</span>
                 }
                 else
                 {
-                    <span class="badge bg-danger">
-                        Bağlı Değil
-                    </span>
+                    <span class="badge bg-danger">Bağlı Değil</span>
                 }
             </div>
 
             <div class="d-flex gap-2">
                 <button class="btn btn-primary"
                         @onclick="ConnectAsync"
-                        disabled="@(_isBusy || TcpClient.IsConnected)">
-                    @if (_isBusy && !TcpClient.IsConnected)
-                    {
-                        <span>Bağlanıyor...</span>
-                    }
-                    else
-                    {
-                        <span>Bağlan</span>
-                    }
+                        disabled="@(_isBusy || ModbusMaster.IsConnected)">
+                    @(_isBusy && !ModbusMaster.IsConnected
+                        ? "Bağlanıyor..."
+                        : "Bağlan")
                 </button>
 
                 <button class="btn btn-danger"
                         @onclick="DisconnectAsync"
-                        disabled="@(_isBusy || !TcpClient.IsConnected)">
+                        disabled="@(_isBusy || !ModbusMaster.IsConnected)">
                     Bağlantıyı Kes
                 </button>
             </div>
@@ -105,22 +85,18 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="card-title mb-0">Modbus İşlemi</h5>
-
                 <span class="badge bg-primary">
                     Function @_selectedFunctionCode.ToString("X2")
                 </span>
             </div>
 
             <p class="text-muted mt-2">
-                Okuma ve yazma işlemleri bu tek panelden yönetilir.
+                Okuma ve yazma işlemleri güvenli Modbus Master servisi üzerinden yürütülür.
             </p>
 
             <div class="row">
                 <div class="col-md-3 mb-3">
-                    <label for="functionCode" class="form-label">
-                        Function ID
-                    </label>
-
+                    <label for="functionCode" class="form-label">Function ID</label>
                     <select id="functionCode"
                             class="form-select"
                             @bind="_selectedFunctionCode"
@@ -132,31 +108,27 @@
                 </div>
 
                 <div class="col-md-3 mb-3">
-                    <label for="unitId" class="form-label">
-                        Unit ID
-                    </label>
-
+                    <label for="unitId" class="form-label">Unit ID</label>
                     <input id="unitId"
                            class="form-control"
                            type="number"
                            min="0"
                            max="255"
                            @bind="_unitId"
-                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                           disabled="@(_isBusy || !ModbusMaster.IsConnected)" />
                 </div>
 
                 <div class="col-md-3 mb-3">
                     <label for="operationAddress" class="form-label">
                         @AddressLabel
                     </label>
-
                     <input id="operationAddress"
                            class="form-control"
                            type="number"
                            min="0"
                            max="65535"
                            @bind="_operationAddress"
-                           disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                           disabled="@(_isBusy || !ModbusMaster.IsConnected)" />
                 </div>
 
                 <div class="col-md-3 mb-3">
@@ -165,49 +137,43 @@
                         <label for="writeValue" class="form-label">
                             Yazılacak Değer
                         </label>
-
                         <input id="writeValue"
                                class="form-control"
                                type="number"
                                min="0"
                                max="65535"
                                @bind="_writeValue"
-                               disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                               disabled="@(_isBusy || !ModbusMaster.IsConnected)" />
                     }
                     else
                     {
                         <label for="quantity" class="form-label">
                             @QuantityLabel
                         </label>
-
                         <input id="quantity"
                                class="form-control"
                                type="number"
                                min="1"
                                max="@MaximumQuantity"
                                @bind="_quantity"
-                               disabled="@(_isBusy || !TcpClient.IsConnected)" />
+                               disabled="@(_isBusy || !ModbusMaster.IsConnected)" />
                     }
                 </div>
             </div>
 
             <button class="btn btn-primary"
                     @onclick="SendSelectedOperationAsync"
-                    disabled="@(_isBusy ||
-                                                !TcpClient.IsConnected ||
-                                                !IsSelectedFunctionImplemented)">
-                İşlemi Gönder
+                    disabled="@(_isBusy || !ModbusMaster.IsConnected)">
+                @(_isBusy ? "İşlem sürüyor..." : "İşlemi Gönder")
             </button>
 
             @if (!string.IsNullOrWhiteSpace(_lastModbusRequestHex))
             {
                 <div class="mt-3">
                     <strong>Gönderilen Modbus TCP isteği:</strong>
-
                     <div class="border rounded bg-dark text-light p-2 mt-1 font-monospace">
                         @_lastModbusRequestHex
                     </div>
-
                     <div class="mt-2 text-muted">
                         Transaction ID: @_lastTransactionId,
                         Function Code: @_lastFunctionCode.ToString("X2"),
@@ -221,10 +187,7 @@
     <div class="card shadow-sm mt-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                    İşlem Sonuçları
-                </h5>
-
+                <h5 class="card-title mb-0">İşlem Sonuçları</h5>
                 <button class="btn btn-sm btn-outline-danger"
                         @onclick="ClearModbusResponses"
                         disabled="@(ResponseStore.Items.Count == 0)">
@@ -244,10 +207,7 @@
                 {
                     <div class="border rounded p-3 mt-3">
                         <div class="d-flex justify-content-between align-items-center">
-                            <strong>
-                                Transaction ID: @response.TransactionId
-                            </strong>
-
+                            <strong>Transaction ID: @response.TransactionId</strong>
                             <small class="text-muted">
                                 @response.ReceivedAt.ToString("HH:mm:ss")
                             </small>
@@ -255,16 +215,13 @@
 
                         <div class="row mt-2 g-2">
                             <div class="col-md-4">
-                                <strong>Unit ID:</strong>
-                                @response.UnitId
+                                <strong>Unit ID:</strong> @response.UnitId
                             </div>
-
                             <div class="col-md-4">
                                 <strong>Function Code:</strong>
                                 @response.FunctionCode.ToString("X2")
                                 — @GetFunctionName(response.FunctionCode)
                             </div>
-
                             <div class="col-md-4">
                                 @if (response.FunctionCode == WriteSingleRegisterFunctionCode)
                                 {
@@ -322,7 +279,6 @@
 
                         <div class="mt-3">
                             <strong>Alınan cevap (HEX):</strong>
-
                             <div class="border rounded bg-dark text-light p-2 mt-1 font-monospace">
                                 @response.Hex
                             </div>
@@ -333,29 +289,13 @@
         </div>
     </div>
 
-    <a class="btn btn-secondary mt-3" href="/">
-        Mod Seçimine Dön
-    </a>
+    <a class="btn btn-secondary mt-3" href="/">Mod Seçimine Dön</a>
 </div>
 
 @code {
     private const byte ReadCoilsFunctionCode = 0x01;
     private const byte ReadHoldingRegistersFunctionCode = 0x03;
     private const byte WriteSingleRegisterFunctionCode = 0x06;
-
-    private byte _selectedFunctionCode = ReadHoldingRegistersFunctionCode;
-    private byte _unitId = 1;
-    private ushort _operationAddress;
-    private ushort _quantity = 10;
-    private ushort _writeValue;
-    private ushort _nextTransactionId = 1;
-    private ushort _lastTransactionId;
-    private byte _lastFunctionCode;
-    private string? _lastModbusRequestHex;
-
-    private readonly Dictionary<ushort, PendingRequest> _pendingRequests = new();
-    private readonly object _pendingRequestsLock = new();
-    private CancellationTokenSource? _receiveCancellation;
 
     private readonly TcpConnectionSettings _settings = new()
     {
@@ -364,26 +304,24 @@
         ConnectionTimeoutMilliseconds = 5000
     };
 
+    private byte _selectedFunctionCode = ReadHoldingRegistersFunctionCode;
+    private byte _unitId = 1;
+    private ushort _operationAddress;
+    private ushort _quantity = 10;
+    private ushort _writeValue;
+
+    private ushort _lastTransactionId;
+    private byte _lastFunctionCode;
+    private string? _lastModbusRequestHex;
     private bool _isBusy;
     private bool _isError;
     private string? _message;
 
     protected override void OnInitialized()
     {
-        TcpClient.ConnectionStateChanged += OnConnectionStateChanged;
+        ModbusMaster.ConnectionStateChanged += OnConnectionStateChanged;
         ResponseStore.DataChanged += OnResponseStoreChanged;
-
-        if (TcpClient.IsConnected)
-        {
-            StartReceiveLoop();
-        }
     }
-
-    private bool IsSelectedFunctionImplemented =>
-        _selectedFunctionCode is
-            ReadCoilsFunctionCode or
-            ReadHoldingRegistersFunctionCode or
-            WriteSingleRegisterFunctionCode;
 
     private string AddressLabel =>
         _selectedFunctionCode == ReadCoilsFunctionCode
@@ -400,315 +338,80 @@
             ? 2000
             : 125;
 
-    private async Task SendSelectedOperationAsync()
-    {
-        switch (_selectedFunctionCode)
-        {
-            case ReadHoldingRegistersFunctionCode:
-                await SendReadRequestAsync(
-                    ReadHoldingRegistersFunctionCode,
-                    _operationAddress,
-                    _quantity,
-                    maximumQuantity: 125,
-                    quantityName: "Register");
-                break;
-
-            case ReadCoilsFunctionCode:
-                await SendReadRequestAsync(
-                    ReadCoilsFunctionCode,
-                    _operationAddress,
-                    _quantity,
-                    maximumQuantity: 2000,
-                    quantityName: "Coil");
-                break;
-
-            case WriteSingleRegisterFunctionCode:
-                await SendWriteSingleRegisterAsync(
-                    _operationAddress,
-                    _writeValue);
-                break;
-
-            default:
-                _isError = true;
-                _message = "Desteklenmeyen Function ID seçildi.";
-                break;
-        }
-    }
-
-    private async Task SendReadRequestAsync(
-        byte functionCode,
-        ushort startingAddress,
-        ushort quantity,
-        ushort maximumQuantity,
-        string quantityName)
-    {
-        if (!TcpClient.IsConnected)
-        {
-            _isError = true;
-            _message = "Önce Slave sunucusuna bağlanmalısınız.";
-            return;
-        }
-
-        if (quantity < 1 || quantity > maximumQuantity)
-        {
-            _isError = true;
-            _message =
-                $"{quantityName} miktarı 1 ile {maximumQuantity} arasında olmalıdır.";
-            return;
-        }
-
-        int lastAddress = startingAddress + quantity - 1;
-
-        if (lastAddress > ushort.MaxValue)
-        {
-            _isError = true;
-            _message =
-                $"Başlangıç adresi ile {quantityName.ToLowerInvariant()} miktarı " +
-                "geçerli adres aralığını aşıyor.";
-            return;
-        }
-
-        _isBusy = true;
-        _isError = false;
-        _message = null;
-
-        try
-        {
-            ushort transactionId = _nextTransactionId;
-            _nextTransactionId = transactionId == ushort.MaxValue
-                ? (ushort)1
-                : (ushort)(transactionId + 1);
-
-            byte[] request = CreateReadRequest(
-                transactionId,
-                _unitId,
-                functionCode,
-                startingAddress,
-                quantity);
-
-            lock (_pendingRequestsLock)
-            {
-                _pendingRequests[transactionId] = new PendingRequest(
-                    functionCode,
-                    startingAddress,
-                    quantity);
-            }
-
-            try
-            {
-                await TcpClient.SendAsync(request);
-            }
-            catch
-            {
-                lock (_pendingRequestsLock)
-                {
-                    _pendingRequests.Remove(transactionId);
-                }
-
-                throw;
-            }
-
-            string requestHex = BitConverter
-                .ToString(request)
-                .Replace("-", " ");
-
-            _lastTransactionId = transactionId;
-            _lastFunctionCode = functionCode;
-            _lastModbusRequestHex = requestHex;
-
-            _message =
-                $"Function {functionCode:X2} isteği gönderildi. " +
-                $"Başlangıç adresi: {startingAddress}, " +
-                $"{quantityName.ToLowerInvariant()} miktarı: {quantity}.";
-        }
-        catch (Exception exception)
-        {
-            _isError = true;
-            _message =
-                $"Modbus TCP isteği gönderilemedi: {exception.Message}";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
-    }
-
-    private async Task SendWriteSingleRegisterAsync(
-        ushort address,
-        ushort value)
-    {
-        if (!TcpClient.IsConnected)
-        {
-            _isError = true;
-            _message = "Önce Slave sunucusuna bağlanmalısınız.";
-            return;
-        }
-
-        _isBusy = true;
-        _isError = false;
-        _message = null;
-
-        try
-        {
-            ushort transactionId = _nextTransactionId;
-            _nextTransactionId = transactionId == ushort.MaxValue
-                ? (ushort)1
-                : (ushort)(transactionId + 1);
-
-            byte[] request = CreateWriteSingleRegisterRequest(
-                transactionId,
-                _unitId,
-                address,
-                value);
-
-            lock (_pendingRequestsLock)
-            {
-                _pendingRequests[transactionId] = new PendingRequest(
-                    WriteSingleRegisterFunctionCode,
-                    address,
-                    value);
-            }
-
-            try
-            {
-                await TcpClient.SendAsync(request);
-            }
-            catch
-            {
-                lock (_pendingRequestsLock)
-                {
-                    _pendingRequests.Remove(transactionId);
-                }
-
-                throw;
-            }
-
-            _lastTransactionId = transactionId;
-            _lastFunctionCode = WriteSingleRegisterFunctionCode;
-            _lastModbusRequestHex = BitConverter
-                .ToString(request)
-                .Replace("-", " ");
-
-            _message =
-                $"FC06 isteği gönderildi. Holding Register adresi: {address}, " +
-                $"yazılacak değer: {value}.";
-        }
-        catch (Exception exception)
-        {
-            _isError = true;
-            _message =
-                $"FC06 isteği gönderilemedi: {exception.Message}";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
-    }
-
-    private static byte[] CreateReadRequest(
-        ushort transactionId,
-        byte unitId,
-        byte functionCode,
-        ushort startingAddress,
-        ushort quantity)
-    {
-        byte[] request = new byte[12];
-
-        WriteUInt16BigEndian(request, 0, transactionId);
-        WriteUInt16BigEndian(request, 2, 0);
-        WriteUInt16BigEndian(request, 4, 6);
-
-        request[6] = unitId;
-        request[7] = functionCode;
-
-        WriteUInt16BigEndian(request, 8, startingAddress);
-        WriteUInt16BigEndian(request, 10, quantity);
-
-        return request;
-    }
-
-    private static byte[] CreateWriteSingleRegisterRequest(
-        ushort transactionId,
-        byte unitId,
-        ushort address,
-        ushort value)
-    {
-        byte[] request = new byte[12];
-
-        WriteUInt16BigEndian(request, 0, transactionId);
-        WriteUInt16BigEndian(request, 2, 0);
-        WriteUInt16BigEndian(request, 4, 6);
-
-        request[6] = unitId;
-        request[7] = WriteSingleRegisterFunctionCode;
-
-        WriteUInt16BigEndian(request, 8, address);
-        WriteUInt16BigEndian(request, 10, value);
-
-        return request;
-    }
-
-    private static void WriteUInt16BigEndian(
-        byte[] destination,
-        int index,
-        ushort value)
-    {
-        destination[index] = (byte)(value >> 8);
-        destination[index + 1] = (byte)value;
-    }
-
     private async Task ConnectAsync()
     {
-        _isBusy = true;
-        _isError = false;
-        _message = null;
-
-        try
-        {
-            await TcpClient.ConnectAsync(_settings);
-
-            StartReceiveLoop();
-
-            _message =
-                $"{_settings.IpAddress}:{_settings.Port} adresine bağlantı kuruldu.";
-        }
-        catch (TimeoutException exception)
-        {
-            _isError = true;
-            _message = exception.Message;
-        }
-        catch (Exception exception)
-        {
-            _isError = true;
-            _message = $"Bağlantı kurulamadı: {exception.Message}";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
+        await RunUiOperationAsync(
+            async () =>
+            {
+                await ModbusMaster.ConnectAsync(_settings);
+                _message =
+                    $"{_settings.IpAddress}:{_settings.Port} adresine bağlantı kuruldu.";
+            },
+            "Bağlantı kurulamadı");
     }
 
     private async Task DisconnectAsync()
     {
+        await RunUiOperationAsync(
+            async () =>
+            {
+                await ModbusMaster.DisconnectAsync();
+                _message = "TCP bağlantısı kapatıldı.";
+            },
+            "Bağlantı kapatılırken hata oluştu");
+    }
+
+    private async Task SendSelectedOperationAsync()
+    {
+        await RunUiOperationAsync(
+            async () =>
+            {
+                ModbusMasterOperationResult result =
+                    _selectedFunctionCode switch
+                    {
+                        ReadCoilsFunctionCode =>
+                            await ModbusMaster.ReadCoilsAsync(
+                                _unitId,
+                                _operationAddress,
+                                _quantity),
+
+                        ReadHoldingRegistersFunctionCode =>
+                            await ModbusMaster.ReadHoldingRegistersAsync(
+                                _unitId,
+                                _operationAddress,
+                                _quantity),
+
+                        WriteSingleRegisterFunctionCode =>
+                            await ModbusMaster.WriteSingleHoldingRegisterAsync(
+                                _unitId,
+                                _operationAddress,
+                                _writeValue),
+
+                        _ => throw new InvalidOperationException(
+                            "Desteklenmeyen Function ID seçildi.")
+                    };
+
+                ShowCompletedOperation(result);
+            },
+            "Modbus işlemi tamamlanamadı");
+    }
+
+    private async Task RunUiOperationAsync(
+        Func<Task> operation,
+        string errorPrefix)
+    {
         _isBusy = true;
         _isError = false;
         _message = null;
 
         try
         {
-            StopReceiveLoop();
-
-            await TcpClient.DisconnectAsync();
-
-            ClearPendingRequests();
-
-            _message = "TCP bağlantısı kapatıldı.";
+            await operation();
         }
         catch (Exception exception)
         {
             _isError = true;
-            _message =
-                $"Bağlantı kapatılırken hata oluştu: {exception.Message}";
+            _message = $"{errorPrefix}: {exception.Message}";
         }
         finally
         {
@@ -716,368 +419,42 @@
         }
     }
 
+    private void ShowCompletedOperation(ModbusMasterOperationResult result)
+    {
+        _lastTransactionId = result.TransactionId;
+        _lastFunctionCode = result.FunctionCode;
+        _lastModbusRequestHex = result.RequestHex;
+
+        _message = result.FunctionCode switch
+        {
+            ReadCoilsFunctionCode =>
+                $"FC01 tamamlandı: {result.Response.RegisterValues.Length} Coil okundu.",
+
+            ReadHoldingRegistersFunctionCode =>
+                $"FC03 tamamlandı: {result.Response.RegisterValues.Length} " +
+                "Holding Register okundu.",
+
+            WriteSingleRegisterFunctionCode =>
+                $"FC06 tamamlandı: Holding Register[{result.StartAddress}] = " +
+                $"{result.QuantityOrValue}.",
+
+            _ => "Modbus işlemi tamamlandı."
+        };
+    }
+
     private void OnConnectionStateChanged(bool isConnected)
     {
-        if (!isConnected)
-        {
-            StopReceiveLoop();
-            ClearPendingRequests();
-        }
-
         _ = InvokeAsync(StateHasChanged);
-    }
-
-    private void StartReceiveLoop()
-    {
-        StopReceiveLoop();
-
-        _receiveCancellation = new CancellationTokenSource();
-        _ = ReceiveLoopAsync(_receiveCancellation.Token);
-    }
-
-    private void StopReceiveLoop()
-    {
-        _receiveCancellation?.Cancel();
-        _receiveCancellation = null;
-    }
-
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
-    {
-        byte[] receiveBuffer = new byte[4096];
-        var pendingBytes = new List<byte>();
-
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested &&
-                   TcpClient.IsConnected)
-            {
-                int byteCount = await TcpClient.ReceiveAsync(
-                    receiveBuffer,
-                    cancellationToken);
-
-                if (byteCount == 0)
-                {
-                    await InvokeAsync(() =>
-                    {
-                        _isError = true;
-                        _message = "Slave TCP bağlantısını kapattı.";
-                        StateHasChanged();
-                    });
-
-                    await TcpClient.DisconnectAsync();
-                    break;
-                }
-
-                pendingBytes.AddRange(
-                    receiveBuffer.AsSpan(0, byteCount).ToArray());
-
-                await ProcessPendingResponseBytesAsync(pendingBytes);
-            }
-        }
-        catch (OperationCanceledException)
-            when (cancellationToken.IsCancellationRequested)
-        {
-            // Kullanıcı bağlantıyı kapattığında normal olarak oluşur.
-        }
-        catch (Exception)
-            when (cancellationToken.IsCancellationRequested)
-        {
-            // Bağlantı kapatılırken NetworkStream de kapanmış olabilir.
-        }
-        catch (Exception exception)
-        {
-            await InvokeAsync(() =>
-            {
-                _isError = true;
-                _message = $"Slave cevabı alınamadı: {exception.Message}";
-                StateHasChanged();
-            });
-        }
-    }
-
-    private async Task ProcessPendingResponseBytesAsync(
-        List<byte> pendingBytes)
-    {
-        const int MbapHeaderByteCount = 7;
-
-        while (pendingBytes.Count >= MbapHeaderByteCount)
-        {
-            ushort protocolId = ReadUInt16BigEndian(pendingBytes, 2);
-            ushort length = ReadUInt16BigEndian(pendingBytes, 4);
-
-            if (protocolId != 0)
-            {
-                pendingBytes.Clear();
-                await ShowResponseErrorAsync(
-                    $"Geçersiz Modbus Protocol ID alındı: {protocolId}.");
-                return;
-            }
-
-            if (length is < 2 or > 254)
-            {
-                pendingBytes.Clear();
-                await ShowResponseErrorAsync(
-                    $"Geçersiz Modbus MBAP Length alındı: {length}.");
-                return;
-            }
-
-            int totalFrameByteCount = 6 + length;
-
-            if (pendingBytes.Count < totalFrameByteCount)
-            {
-                return;
-            }
-
-            byte[] responseBytes = pendingBytes
-                .GetRange(0, totalFrameByteCount)
-                .ToArray();
-
-            pendingBytes.RemoveRange(0, totalFrameByteCount);
-
-            await ProcessModbusResponseAsync(responseBytes);
-        }
-    }
-
-    private async Task ProcessModbusResponseAsync(byte[] response)
-    {
-        ushort transactionId = ReadUInt16BigEndian(response, 0);
-        byte unitId = response[6];
-        byte functionCode = response[7];
-
-        PendingRequest? pendingRequest = TakePendingRequest(transactionId);
-
-        if ((functionCode & 0x80) != 0)
-        {
-            byte exceptionCode = response.Length > 8
-                ? response[8]
-                : (byte)0;
-
-            await ShowResponseErrorAsync(
-                $"Slave Modbus hata cevabı gönderdi. " +
-                $"Transaction ID: {transactionId}, " +
-                $"Exception Code: 0x{exceptionCode:X2} " +
-                $"({GetExceptionName(exceptionCode)}).");
-            return;
-        }
-
-        if (functionCode is not ReadCoilsFunctionCode and
-            not ReadHoldingRegistersFunctionCode and
-            not WriteSingleRegisterFunctionCode)
-        {
-            await ShowResponseErrorAsync(
-                $"Beklenmeyen Function Code alındı: 0x{functionCode:X2}.");
-            return;
-        }
-
-        if (pendingRequest is not null &&
-            functionCode != pendingRequest.FunctionCode)
-        {
-            await ShowResponseErrorAsync(
-                $"Transaction ID {transactionId} için " +
-                $"0x{pendingRequest.FunctionCode:X2} cevabı beklenirken " +
-                $"0x{functionCode:X2} alındı.");
-            return;
-        }
-
-        if (functionCode == WriteSingleRegisterFunctionCode)
-        {
-            await ProcessWriteSingleRegisterResponseAsync(
-                response,
-                transactionId,
-                unitId,
-                pendingRequest);
-            return;
-        }
-
-        if (response.Length < 9)
-        {
-            await ShowResponseErrorAsync(
-                $"Eksik Function {functionCode:X2} cevabı alındı.");
-            return;
-        }
-
-        int dataByteCount = response[8];
-
-        if (dataByteCount == 0 ||
-            response.Length != 9 + dataByteCount)
-        {
-            await ShowResponseErrorAsync(
-                $"Function {functionCode:X2} cevabındaki byte sayısı geçersiz.");
-            return;
-        }
-
-        ushort[] values;
-
-        if (functionCode == ReadCoilsFunctionCode)
-        {
-            int coilCount = pendingRequest?.Quantity ?? dataByteCount * 8;
-            int expectedByteCount = (coilCount + 7) / 8;
-
-            if (dataByteCount != expectedByteCount)
-            {
-                await ShowResponseErrorAsync(
-                    $"Slave {coilCount} Coil için {expectedByteCount} byte yerine " +
-                    $"{dataByteCount} byte döndürdü.");
-                return;
-            }
-
-            values = new ushort[coilCount];
-
-            for (int index = 0; index < coilCount; index++)
-            {
-                int sourceByteIndex = 9 + (index / 8);
-                int sourceBitIndex = index % 8;
-
-                values[index] =
-                    (response[sourceByteIndex] & (1 << sourceBitIndex)) != 0
-                        ? (ushort)1
-                        : (ushort)0;
-            }
-        }
-        else
-        {
-            if (dataByteCount % 2 != 0)
-            {
-                await ShowResponseErrorAsync(
-                    "FC03 cevabındaki register byte sayısı çift olmalıdır.");
-                return;
-            }
-
-            values = new ushort[dataByteCount / 2];
-
-            for (int index = 0; index < values.Length; index++)
-            {
-                values[index] = ReadUInt16BigEndian(
-                    response,
-                    9 + (index * 2));
-            }
-        }
-
-        if (pendingRequest is not null &&
-            values.Length != pendingRequest.Quantity)
-        {
-            await ShowResponseErrorAsync(
-                $"Slave {pendingRequest.Quantity} değer yerine " +
-                $"{values.Length} değer döndürdü.");
-            return;
-        }
-
-        var record = new ModbusMasterResponseRecord
-        {
-            TransactionId = transactionId,
-            UnitId = unitId,
-            FunctionCode = functionCode,
-            StartAddress = pendingRequest?.StartAddress,
-            RegisterValues = values,
-            ReceivedAt = DateTime.Now,
-            Hex = BitConverter.ToString(response).Replace("-", " ")
-        };
-
-        await InvokeAsync(() =>
-        {
-            ResponseStore.Add(record);
-
-            _isError = false;
-            _message =
-                $"Transaction ID {transactionId} cevabı alındı: " +
-                $"{values.Length} " +
-                $"{GetFunctionName(functionCode)} tamamlandı.";
-
-            StateHasChanged();
-        });
-    }
-
-    private async Task ProcessWriteSingleRegisterResponseAsync(
-        byte[] response,
-        ushort transactionId,
-        byte unitId,
-        PendingRequest? pendingRequest)
-    {
-        if (response.Length != 12)
-        {
-            await ShowResponseErrorAsync(
-                $"FC06 cevabı 12 byte olmalıdır; {response.Length} byte alındı.");
-            return;
-        }
-
-        ushort echoedAddress = ReadUInt16BigEndian(response, 8);
-        ushort echoedValue = ReadUInt16BigEndian(response, 10);
-
-        if (pendingRequest is not null &&
-            (echoedAddress != pendingRequest.StartAddress ||
-             echoedValue != pendingRequest.QuantityOrValue))
-        {
-            await ShowResponseErrorAsync(
-                $"FC06 cevabı gönderilen adres/değer ile eşleşmiyor. " +
-                $"Beklenen: {pendingRequest.StartAddress}/{pendingRequest.QuantityOrValue}, " +
-                $"alınan: {echoedAddress}/{echoedValue}.");
-            return;
-        }
-
-        var record = new ModbusMasterResponseRecord
-        {
-            TransactionId = transactionId,
-            UnitId = unitId,
-            FunctionCode = WriteSingleRegisterFunctionCode,
-            StartAddress = echoedAddress,
-            RegisterValues = new[] { echoedValue },
-            ReceivedAt = DateTime.Now,
-            Hex = BitConverter.ToString(response).Replace("-", " ")
-        };
-
-        await InvokeAsync(() =>
-        {
-            ResponseStore.Add(record);
-
-            _isError = false;
-            _message =
-                $"FC06 tamamlandı: Holding Register[{echoedAddress}] = {echoedValue}.";
-
-            StateHasChanged();
-        });
-    }
-
-    private PendingRequest? TakePendingRequest(ushort transactionId)
-    {
-        lock (_pendingRequestsLock)
-        {
-            if (!_pendingRequests.Remove(
-                    transactionId,
-                    out PendingRequest? request))
-            {
-                return null;
-            }
-
-            return request;
-        }
-    }
-
-    private void ClearPendingRequests()
-    {
-        lock (_pendingRequestsLock)
-        {
-            _pendingRequests.Clear();
-        }
-    }
-
-    private Task ShowResponseErrorAsync(string message)
-    {
-        return InvokeAsync(() =>
-        {
-            _isError = true;
-            _message = message;
-            StateHasChanged();
-        });
-    }
-
-    private void ClearModbusResponses()
-    {
-        ResponseStore.Clear();
     }
 
     private void OnResponseStoreChanged()
     {
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearModbusResponses()
+    {
+        ResponseStore.Clear();
     }
 
     private static int GetRegisterAddress(
@@ -1103,18 +480,6 @@
             : "Register adresi";
     }
 
-    private static string GetExceptionName(byte exceptionCode)
-    {
-        return exceptionCode switch
-        {
-            0x01 => "Illegal Function",
-            0x02 => "Illegal Data Address",
-            0x03 => "Illegal Data Value",
-            0x04 => "Server Device Failure",
-            _ => "Bilinmeyen hata"
-        };
-    }
-
     private static string GetFunctionName(byte functionCode)
     {
         return functionCode switch
@@ -1126,27 +491,9 @@
         };
     }
 
-    private static ushort ReadUInt16BigEndian(
-        IReadOnlyList<byte> bytes,
-        int index)
-    {
-        return (ushort)(
-            (bytes[index] << 8) |
-            bytes[index + 1]);
-    }
-
-    private sealed record PendingRequest(
-        byte FunctionCode,
-        ushort StartAddress,
-        ushort QuantityOrValue)
-    {
-        public ushort Quantity => QuantityOrValue;
-    }
-
     public void Dispose()
     {
-        StopReceiveLoop();
-        TcpClient.ConnectionStateChanged -= OnConnectionStateChanged;
+        ModbusMaster.ConnectionStateChanged -= OnConnectionStateChanged;
         ResponseStore.DataChanged -= OnResponseStoreChanged;
     }
 }

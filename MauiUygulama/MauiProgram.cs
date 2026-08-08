@@ -1,9 +1,9 @@
-﻿using Microsoft.Extensions.Logging;
-using MauiUygulama.ViewModels;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using MauiUygulama.Core.Interfaces;
 using MauiUygulama.Services.Communication;
 using MauiUygulama.Services.Modbus;
-using Microsoft.Extensions.DependencyInjection;
+using MauiUygulama.ViewModels;
 
 namespace MauiUygulama;
 
@@ -24,7 +24,6 @@ public static class MauiProgram
 
         builder.Services.AddMauiBlazorWebView();
 
-        // Uygulamanın kullandığı servisler Debug ve Release'te kayıtlı olmalıdır.
         builder.Services.AddSingleton<ModeSelectionViewModel>();
         builder.Services.AddSingleton<ITcpClientService, TcpClientService>();
         builder.Services.AddSingleton<ITcpServerService, TcpServerService>();
@@ -46,6 +45,10 @@ public static class MauiProgram
             ModbusMasterResponseStore>();
 
         builder.Services.AddSingleton<
+            IModbusMasterService,
+            ModbusMasterService>();
+
+        builder.Services.AddSingleton<
             IRegisterManager,
             RegisterManager>();
 
@@ -64,9 +67,9 @@ public static class MauiProgram
 
         MauiApp app = builder.Build();
 
-        // IModbusRequestProcessor, FrameReceived olayina yapicisinda abone olur.
-        // Singleton servisler tembel olusturuldugu icin yalnizca DI kaydi yeterli
-        // degildir; uygulama acilirken servisi cozumleyerek islemciyi etkinlestiririz.
+        // Slave işlemcisi FrameReceived olayına yapıcısında abone olur.
+        // Singleton servisler tembel oluşturulduğu için uygulama açılırken
+        // çözümleyerek FC01/FC03/FC06 istek işlemcisini etkinleştiririz.
         _ = app.Services.GetRequiredService<IModbusRequestProcessor>();
 
         return app;
