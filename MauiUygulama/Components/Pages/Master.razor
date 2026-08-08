@@ -125,9 +125,9 @@
                             class="form-select"
                             @bind="_selectedFunctionCode"
                             disabled="@_isBusy">
-                        <option value="1">01 — Read Coils</option>
-                        <option value="3">03 — Read Holding Registers</option>
-                        <option value="6">06 — Write Single Register</option>
+                        <option value="1">FC01 — Read Coils</option>
+                        <option value="3">FC03 — Read Holding Registers</option>
+                        <option value="6">FC06 — Write Single Register</option>
                     </select>
                 </div>
 
@@ -190,14 +190,6 @@
                     }
                 </div>
             </div>
-
-            @if (!IsSelectedFunctionImplemented)
-            {
-                <div class="alert alert-info">
-                    @SelectedFunctionName için merkezî arayüz hazırlandı.
-                    Haberleşme kodu sonraki adımda eklenecek.
-                </div>
-            }
 
             <button class="btn btn-primary"
                     @onclick="SendSelectedOperationAsync"
@@ -274,8 +266,16 @@
                             </div>
 
                             <div class="col-md-4">
-                                <strong>Register miktarı:</strong>
-                                @response.RegisterValues.Length
+                                @if (response.FunctionCode == WriteSingleRegisterFunctionCode)
+                                {
+                                    <strong>Yazılan değer:</strong>
+                                    @response.RegisterValues[0]
+                                }
+                                else
+                                {
+                                    <strong>@(GetResultCountLabel(response.FunctionCode)):</strong>
+                                    @response.RegisterValues.Length
+                                }
                             </div>
                         </div>
 
@@ -284,8 +284,8 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th>Sıra</th>
-                                        <th>Register adresi</th>
-                                        <th>Değer (Decimal)</th>
+                                        <th>@GetResultAddressLabel(response.FunctionCode)</th>
+                                        <th>Değer</th>
                                         <th>Değer (HEX)</th>
                                     </tr>
                                 </thead>
@@ -299,7 +299,18 @@
                                         <tr>
                                             <td>@(index + 1)</td>
                                             <td>@GetRegisterAddress(response, index)</td>
-                                            <td>@value</td>
+                                            <td>
+                                                @if (response.FunctionCode == ReadCoilsFunctionCode)
+                                                {
+                                                    <span class="badge @(value == 0 ? "bg-secondary" : "bg-success")">
+                                                        @(value == 0 ? "0 / OFF" : "1 / ON")
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    @value
+                                                }
+                                            </td>
                                             <td class="font-monospace">
                                                 0x@(value.ToString("X4"))
                                             </td>
@@ -342,7 +353,7 @@
     private byte _lastFunctionCode;
     private string? _lastModbusRequestHex;
 
-    private readonly Dictionary<ushort, PendingReadRequest> _pendingReadRequests = new();
+    private readonly Dictionary<ushort, PendingRequest> _pendingRequests = new();
     private readonly object _pendingRequestsLock = new();
     private CancellationTokenSource? _receiveCancellation;
 
@@ -369,10 +380,10 @@
     }
 
     private bool IsSelectedFunctionImplemented =>
-        _selectedFunctionCode == ReadHoldingRegistersFunctionCode;
-
-    private string SelectedFunctionName =>
-        GetFunctionName(_selectedFunctionCode);
+        _selectedFunctionCode is
+            ReadCoilsFunctionCode or
+            ReadHoldingRegistersFunctionCode or
+            WriteSingleRegisterFunctionCode;
 
     private string AddressLabel =>
         _selectedFunctionCode == ReadCoilsFunctionCode
@@ -394,16 +405,27 @@
         switch (_selectedFunctionCode)
         {
             case ReadHoldingRegistersFunctionCode:
-                await SendReadRegistersRequestAsync(
+                await SendReadRequestAsync(
+                    ReadHoldingRegistersFunctionCode,
                     _operationAddress,
-                    _quantity);
+                    _quantity,
+                    maximumQuantity: 125,
+                    quantityName: "Register");
                 break;
 
             case ReadCoilsFunctionCode:
+                await SendReadRequestAsync(
+                    ReadCoilsFunctionCode,
+                    _operationAddress,
+                    _quantity,
+                    maximumQuantity: 2000,
+                    quantityName: "Coil");
+                break;
+
             case WriteSingleRegisterFunctionCode:
-                _isError = false;
-                _message =
-                    $"{SelectedFunctionName} haberleşmesi sonraki adımda eklenecek.";
+                await SendWriteSingleRegisterAsync(
+                    _operationAddress,
+                    _writeValue);
                 break;
 
             default:
@@ -413,9 +435,12 @@
         }
     }
 
-    private async Task SendReadRegistersRequestAsync(
+    private async Task SendReadRequestAsync(
+        byte functionCode,
         ushort startingAddress,
-        ushort registerQuantity)
+        ushort quantity,
+        ushort maximumQuantity,
+        string quantityName)
     {
         if (!TcpClient.IsConnected)
         {
@@ -424,21 +449,22 @@
             return;
         }
 
-        if (registerQuantity is < 1 or > 125)
-        {
-            _isError = true;
-            _message = "Register miktarı 1 ile 125 arasında olmalıdır.";
-            return;
-        }
-
-        int lastRegisterAddress =
-            startingAddress + registerQuantity - 1;
-
-        if (lastRegisterAddress > ushort.MaxValue)
+        if (quantity < 1 || quantity > maximumQuantity)
         {
             _isError = true;
             _message =
-                "Başlangıç adresi ile register miktarı geçerli adres aralığını aşıyor.";
+                $"{quantityName} miktarı 1 ile {maximumQuantity} arasında olmalıdır.";
+            return;
+        }
+
+        int lastAddress = startingAddress + quantity - 1;
+
+        if (lastAddress > ushort.MaxValue)
+        {
+            _isError = true;
+            _message =
+                $"Başlangıç adresi ile {quantityName.ToLowerInvariant()} miktarı " +
+                "geçerli adres aralığını aşıyor.";
             return;
         }
 
@@ -453,19 +479,19 @@
                 ? (ushort)1
                 : (ushort)(transactionId + 1);
 
-            byte[] request = CreateReadRegistersRequest(
+            byte[] request = CreateReadRequest(
                 transactionId,
                 _unitId,
-                ReadHoldingRegistersFunctionCode,
+                functionCode,
                 startingAddress,
-                registerQuantity);
+                quantity);
 
             lock (_pendingRequestsLock)
             {
-                _pendingReadRequests[transactionId] = new PendingReadRequest(
-                    ReadHoldingRegistersFunctionCode,
+                _pendingRequests[transactionId] = new PendingRequest(
+                    functionCode,
                     startingAddress,
-                    registerQuantity);
+                    quantity);
             }
 
             try
@@ -476,7 +502,7 @@
             {
                 lock (_pendingRequestsLock)
                 {
-                    _pendingReadRequests.Remove(transactionId);
+                    _pendingRequests.Remove(transactionId);
                 }
 
                 throw;
@@ -487,13 +513,13 @@
                 .Replace("-", " ");
 
             _lastTransactionId = transactionId;
-            _lastFunctionCode = ReadHoldingRegistersFunctionCode;
+            _lastFunctionCode = functionCode;
             _lastModbusRequestHex = requestHex;
 
             _message =
-                "Function 03 isteği gönderildi. " +
+                $"Function {functionCode:X2} isteği gönderildi. " +
                 $"Başlangıç adresi: {startingAddress}, " +
-                $"register miktarı: {registerQuantity}.";
+                $"{quantityName.ToLowerInvariant()} miktarı: {quantity}.";
         }
         catch (Exception exception)
         {
@@ -507,12 +533,84 @@
         }
     }
 
-    private static byte[] CreateReadRegistersRequest(
+    private async Task SendWriteSingleRegisterAsync(
+        ushort address,
+        ushort value)
+    {
+        if (!TcpClient.IsConnected)
+        {
+            _isError = true;
+            _message = "Önce Slave sunucusuna bağlanmalısınız.";
+            return;
+        }
+
+        _isBusy = true;
+        _isError = false;
+        _message = null;
+
+        try
+        {
+            ushort transactionId = _nextTransactionId;
+            _nextTransactionId = transactionId == ushort.MaxValue
+                ? (ushort)1
+                : (ushort)(transactionId + 1);
+
+            byte[] request = CreateWriteSingleRegisterRequest(
+                transactionId,
+                _unitId,
+                address,
+                value);
+
+            lock (_pendingRequestsLock)
+            {
+                _pendingRequests[transactionId] = new PendingRequest(
+                    WriteSingleRegisterFunctionCode,
+                    address,
+                    value);
+            }
+
+            try
+            {
+                await TcpClient.SendAsync(request);
+            }
+            catch
+            {
+                lock (_pendingRequestsLock)
+                {
+                    _pendingRequests.Remove(transactionId);
+                }
+
+                throw;
+            }
+
+            _lastTransactionId = transactionId;
+            _lastFunctionCode = WriteSingleRegisterFunctionCode;
+            _lastModbusRequestHex = BitConverter
+                .ToString(request)
+                .Replace("-", " ");
+
+            _message =
+                $"FC06 isteği gönderildi. Holding Register adresi: {address}, " +
+                $"yazılacak değer: {value}.";
+        }
+        catch (Exception exception)
+        {
+            _isError = true;
+            _message =
+                $"FC06 isteği gönderilemedi: {exception.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static byte[] CreateReadRequest(
         ushort transactionId,
         byte unitId,
         byte functionCode,
         ushort startingAddress,
-        ushort registerQuantity)
+        ushort quantity)
     {
         byte[] request = new byte[12];
 
@@ -524,7 +622,28 @@
         request[7] = functionCode;
 
         WriteUInt16BigEndian(request, 8, startingAddress);
-        WriteUInt16BigEndian(request, 10, registerQuantity);
+        WriteUInt16BigEndian(request, 10, quantity);
+
+        return request;
+    }
+
+    private static byte[] CreateWriteSingleRegisterRequest(
+        ushort transactionId,
+        byte unitId,
+        ushort address,
+        ushort value)
+    {
+        byte[] request = new byte[12];
+
+        WriteUInt16BigEndian(request, 0, transactionId);
+        WriteUInt16BigEndian(request, 2, 0);
+        WriteUInt16BigEndian(request, 4, 6);
+
+        request[6] = unitId;
+        request[7] = WriteSingleRegisterFunctionCode;
+
+        WriteUInt16BigEndian(request, 8, address);
+        WriteUInt16BigEndian(request, 10, value);
 
         return request;
     }
@@ -725,7 +844,7 @@
         byte unitId = response[6];
         byte functionCode = response[7];
 
-        PendingReadRequest? pendingRequest = TakePendingRequest(transactionId);
+        PendingRequest? pendingRequest = TakePendingRequest(transactionId);
 
         if ((functionCode & 0x80) != 0)
         {
@@ -741,7 +860,9 @@
             return;
         }
 
-        if (functionCode != ReadHoldingRegistersFunctionCode)
+        if (functionCode is not ReadCoilsFunctionCode and
+            not ReadHoldingRegistersFunctionCode and
+            not WriteSingleRegisterFunctionCode)
         {
             await ShowResponseErrorAsync(
                 $"Beklenmeyen Function Code alındı: 0x{functionCode:X2}.");
@@ -758,6 +879,16 @@
             return;
         }
 
+        if (functionCode == WriteSingleRegisterFunctionCode)
+        {
+            await ProcessWriteSingleRegisterResponseAsync(
+                response,
+                transactionId,
+                unitId,
+                pendingRequest);
+            return;
+        }
+
         if (response.Length < 9)
         {
             await ShowResponseErrorAsync(
@@ -765,32 +896,69 @@
             return;
         }
 
-        int registerByteCount = response[8];
+        int dataByteCount = response[8];
 
-        if (registerByteCount == 0 ||
-            registerByteCount % 2 != 0 ||
-            response.Length != 9 + registerByteCount)
+        if (dataByteCount == 0 ||
+            response.Length != 9 + dataByteCount)
         {
             await ShowResponseErrorAsync(
                 $"Function {functionCode:X2} cevabındaki byte sayısı geçersiz.");
             return;
         }
 
-        var registerValues = new ushort[registerByteCount / 2];
+        ushort[] values;
 
-        for (int index = 0; index < registerValues.Length; index++)
+        if (functionCode == ReadCoilsFunctionCode)
         {
-            registerValues[index] = ReadUInt16BigEndian(
-                response,
-                9 + (index * 2));
+            int coilCount = pendingRequest?.Quantity ?? dataByteCount * 8;
+            int expectedByteCount = (coilCount + 7) / 8;
+
+            if (dataByteCount != expectedByteCount)
+            {
+                await ShowResponseErrorAsync(
+                    $"Slave {coilCount} Coil için {expectedByteCount} byte yerine " +
+                    $"{dataByteCount} byte döndürdü.");
+                return;
+            }
+
+            values = new ushort[coilCount];
+
+            for (int index = 0; index < coilCount; index++)
+            {
+                int sourceByteIndex = 9 + (index / 8);
+                int sourceBitIndex = index % 8;
+
+                values[index] =
+                    (response[sourceByteIndex] & (1 << sourceBitIndex)) != 0
+                        ? (ushort)1
+                        : (ushort)0;
+            }
+        }
+        else
+        {
+            if (dataByteCount % 2 != 0)
+            {
+                await ShowResponseErrorAsync(
+                    "FC03 cevabındaki register byte sayısı çift olmalıdır.");
+                return;
+            }
+
+            values = new ushort[dataByteCount / 2];
+
+            for (int index = 0; index < values.Length; index++)
+            {
+                values[index] = ReadUInt16BigEndian(
+                    response,
+                    9 + (index * 2));
+            }
         }
 
         if (pendingRequest is not null &&
-            registerValues.Length != pendingRequest.Quantity)
+            values.Length != pendingRequest.Quantity)
         {
             await ShowResponseErrorAsync(
-                $"Slave {pendingRequest.Quantity} register yerine " +
-                $"{registerValues.Length} register döndürdü.");
+                $"Slave {pendingRequest.Quantity} değer yerine " +
+                $"{values.Length} değer döndürdü.");
             return;
         }
 
@@ -800,7 +968,7 @@
             UnitId = unitId,
             FunctionCode = functionCode,
             StartAddress = pendingRequest?.StartAddress,
-            RegisterValues = registerValues,
+            RegisterValues = values,
             ReceivedAt = DateTime.Now,
             Hex = BitConverter.ToString(response).Replace("-", " ")
         };
@@ -812,20 +980,70 @@
             _isError = false;
             _message =
                 $"Transaction ID {transactionId} cevabı alındı: " +
-                $"{registerValues.Length} " +
+                $"{values.Length} " +
                 $"{GetFunctionName(functionCode)} tamamlandı.";
 
             StateHasChanged();
         });
     }
 
-    private PendingReadRequest? TakePendingRequest(ushort transactionId)
+    private async Task ProcessWriteSingleRegisterResponseAsync(
+        byte[] response,
+        ushort transactionId,
+        byte unitId,
+        PendingRequest? pendingRequest)
+    {
+        if (response.Length != 12)
+        {
+            await ShowResponseErrorAsync(
+                $"FC06 cevabı 12 byte olmalıdır; {response.Length} byte alındı.");
+            return;
+        }
+
+        ushort echoedAddress = ReadUInt16BigEndian(response, 8);
+        ushort echoedValue = ReadUInt16BigEndian(response, 10);
+
+        if (pendingRequest is not null &&
+            (echoedAddress != pendingRequest.StartAddress ||
+             echoedValue != pendingRequest.QuantityOrValue))
+        {
+            await ShowResponseErrorAsync(
+                $"FC06 cevabı gönderilen adres/değer ile eşleşmiyor. " +
+                $"Beklenen: {pendingRequest.StartAddress}/{pendingRequest.QuantityOrValue}, " +
+                $"alınan: {echoedAddress}/{echoedValue}.");
+            return;
+        }
+
+        var record = new ModbusMasterResponseRecord
+        {
+            TransactionId = transactionId,
+            UnitId = unitId,
+            FunctionCode = WriteSingleRegisterFunctionCode,
+            StartAddress = echoedAddress,
+            RegisterValues = new[] { echoedValue },
+            ReceivedAt = DateTime.Now,
+            Hex = BitConverter.ToString(response).Replace("-", " ")
+        };
+
+        await InvokeAsync(() =>
+        {
+            ResponseStore.Add(record);
+
+            _isError = false;
+            _message =
+                $"FC06 tamamlandı: Holding Register[{echoedAddress}] = {echoedValue}.";
+
+            StateHasChanged();
+        });
+    }
+
+    private PendingRequest? TakePendingRequest(ushort transactionId)
     {
         lock (_pendingRequestsLock)
         {
-            if (!_pendingReadRequests.Remove(
+            if (!_pendingRequests.Remove(
                     transactionId,
-                    out PendingReadRequest? request))
+                    out PendingRequest? request))
             {
                 return null;
             }
@@ -838,7 +1056,7 @@
     {
         lock (_pendingRequestsLock)
         {
-            _pendingReadRequests.Clear();
+            _pendingRequests.Clear();
         }
     }
 
@@ -871,6 +1089,20 @@
             : index;
     }
 
+    private static string GetResultCountLabel(byte functionCode)
+    {
+        return functionCode == ReadCoilsFunctionCode
+            ? "Coil miktarı"
+            : "Register miktarı";
+    }
+
+    private static string GetResultAddressLabel(byte functionCode)
+    {
+        return functionCode == ReadCoilsFunctionCode
+            ? "Coil adresi"
+            : "Register adresi";
+    }
+
     private static string GetExceptionName(byte exceptionCode)
     {
         return exceptionCode switch
@@ -889,7 +1121,7 @@
         {
             ReadCoilsFunctionCode => "Read Coils",
             ReadHoldingRegistersFunctionCode => "Holding Register",
-            WriteSingleRegisterFunctionCode => "Write Single Register",
+            WriteSingleRegisterFunctionCode => "Write Single Holding Register",
             _ => "Bilinmeyen fonksiyon"
         };
     }
@@ -903,10 +1135,13 @@
             bytes[index + 1]);
     }
 
-    private sealed record PendingReadRequest(
+    private sealed record PendingRequest(
         byte FunctionCode,
         ushort StartAddress,
-        ushort Quantity);
+        ushort QuantityOrValue)
+    {
+        public ushort Quantity => QuantityOrValue;
+    }
 
     public void Dispose()
     {

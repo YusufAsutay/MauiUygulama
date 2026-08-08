@@ -65,7 +65,10 @@ public sealed class ModbusFrameStore : IModbusFrameStore, IDisposable
         ushort? startAddress = null;
         ushort? quantity = null;
 
-        if (frame.FunctionCode == 0x03 && frame.Data.Length >= 4)
+        if ((frame.FunctionCode == 0x01 ||
+             frame.FunctionCode == 0x03 ||
+             frame.FunctionCode == 0x06) &&
+            frame.Data.Length >= 4)
         {
             startAddress = ReadUInt16BigEndian(frame.Data, 0);
             quantity = ReadUInt16BigEndian(frame.Data, 2);

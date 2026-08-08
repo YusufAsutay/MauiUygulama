@@ -3,6 +3,7 @@ using MauiUygulama.ViewModels;
 using MauiUygulama.Core.Interfaces;
 using MauiUygulama.Services.Communication;
 using MauiUygulama.Services.Modbus;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MauiUygulama;
 
@@ -61,6 +62,13 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        return builder.Build();
+        MauiApp app = builder.Build();
+
+        // IModbusRequestProcessor, FrameReceived olayina yapicisinda abone olur.
+        // Singleton servisler tembel olusturuldugu icin yalnizca DI kaydi yeterli
+        // degildir; uygulama acilirken servisi cozumleyerek islemciyi etkinlestiririz.
+        _ = app.Services.GetRequiredService<IModbusRequestProcessor>();
+
+        return app;
     }
 }

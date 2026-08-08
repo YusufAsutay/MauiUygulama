@@ -9,6 +9,7 @@
 @inject ITcpServerService TcpServer
 @inject IModbusFrameStore ModbusFrameStore
 @inject IRegisterManager RegisterManager
+@inject ISlaveRegisterViewStore SlaveRegisterViewStore
 
 <PageTitle>Merkezî Slave Modu</PageTitle>
 
@@ -17,7 +18,7 @@
         <div>
             <h1 class="mb-1">Merkezî Slave Modu</h1>
             <p class="text-muted mb-0">
-                TCP sunucusunu yönetin; Coil ve Holding Register değerlerini izleyip manuel değiştirin.
+                Master tarafından erişilen adresleri otomatik izleyin ve Slave değerlerini yönetin.
             </p>
         </div>
 
@@ -111,51 +112,21 @@
                 <div>
                     <h5 class="mb-1">Slave Veri Alanı</h5>
                     <small class="text-muted">
-                        Adresler Modbus PDU içindeki sıfır tabanlı adreslerdir.
+                        Başarılı Modbus isteklerindeki adresler otomatik olarak bu tabloya eklenir.
                     </small>
                 </div>
 
-                <button class="btn btn-sm btn-outline-primary"
-                        @onclick="() => RefreshRegisterRows()">
-                    Değerleri Yenile
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary">@_registerRows.Count adres</span>
+                    <button class="btn btn-sm btn-outline-primary"
+                            @onclick="RefreshRegisterRows">
+                        Değerleri Yenile
+                    </button>
+                </div>
             </div>
         </div>
 
         <div class="card-body">
-            <div class="row g-3 align-items-end mb-4">
-                <div class="col-md-4 col-lg-3">
-                    <label for="startAddress" class="form-label">
-                        Başlangıç Adresi
-                    </label>
-                    <input id="startAddress"
-                           class="form-control"
-                           type="number"
-                           min="0"
-                           max="65535"
-                           @bind="_startAddress" />
-                </div>
-
-                <div class="col-md-4 col-lg-3">
-                    <label for="visibleCount" class="form-label">
-                        Gösterilecek Adres Sayısı
-                    </label>
-                    <input id="visibleCount"
-                           class="form-control"
-                           type="number"
-                           min="1"
-                           max="100"
-                           @bind="_visibleAddressCount" />
-                </div>
-
-                <div class="col-md-4 col-lg-2">
-                    <button class="btn btn-primary w-100"
-                            @onclick="ApplyAddressRange">
-                        Adresleri Getir
-                    </button>
-                </div>
-            </div>
-
             @if (!string.IsNullOrWhiteSpace(_registerMessage))
             {
                 <div class="alert @(_isRegisterError ? "alert-danger" : "alert-success") py-2"
@@ -164,98 +135,70 @@
                 </div>
             }
 
-            <ul class="nav nav-pills mb-3" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link @(_activeTable == RegisterTable.Coils ? "active" : null)"
-                            type="button"
-                            @onclick="() => SelectTable(RegisterTable.Coils)">
-                        Coils (FC01)
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link @(_activeTable == RegisterTable.HoldingRegisters ? "active" : null)"
-                            type="button"
-                            @onclick="() => SelectTable(RegisterTable.HoldingRegisters)">
-                        Holding Registers (FC03 / FC06)
-                    </button>
-                </li>
-            </ul>
-
-            @if (_activeTable == RegisterTable.Coils)
-            {
-                <div class="table-responsive">
-                    <table class="table table-striped table-hover align-middle mb-0">
-                        <thead class="table-light">
+            <div class="table-responsive border rounded">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Tür</th>
+                            <th scope="col">Adres</th>
+                            <th scope="col">Son Fonksiyon</th>
+                            <th scope="col">Decimal Değer</th>
+                            <th scope="col">Hex</th>
+                            <th scope="col">Binary</th>
+                            <th scope="col">Son Erişim</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_registerRows.Count == 0)
+                        {
                             <tr>
-                                <th scope="col">Adres</th>
-                                <th scope="col">Etiket</th>
-                                <th scope="col">Manuel Değer</th>
-                                <th scope="col">Durum</th>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    Henüz takip edilen bir adres yok. Master'dan başarılı bir FC01,
+                                    FC03 veya FC06 isteği gönderildiğinde adresler otomatik eklenecek.
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (CoilRow row in _coilRows)
+                        }
+                        else
+                        {
+                            @foreach (SlaveRegisterRow row in _registerRows)
                             {
-                                <tr @key="row.Address">
+                                <tr @key="GetRowKey(row)">
+                                    <td>@GetAreaName(row.Area)</td>
                                     <td class="fw-semibold">@row.Address</td>
-                                    <td class="font-monospace">Coil[@row.Address]</td>
-                                    <td>
-                                        <div class="form-check form-switch mb-0">
-                                            <input class="form-check-input"
-                                                   type="checkbox"
-                                                   role="switch"
-                                                   checked="@row.Value"
-                                                   @onchange="args => UpdateCoil(row.Address, args)" />
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span class="badge @(row.Value ? "bg-success" : "bg-secondary")">
-                                            @(row.Value ? "ON / True" : "OFF / False")
-                                        </span>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-striped table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th scope="col">Adres</th>
-                                <th scope="col">Etiket</th>
-                                <th scope="col">Decimal Değer</th>
-                                <th scope="col">Hex</th>
-                                <th scope="col">Binary</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (HoldingRegisterRow row in _holdingRegisterRows)
-                            {
-                                <tr @key="row.Address">
-                                    <td class="fw-semibold">@row.Address</td>
-                                    <td class="font-monospace">HR[@row.Address]</td>
+                                    <td>FC@(row.FunctionCode.ToString("D2"))</td>
                                     <td style="min-width: 170px;">
-                                        <input class="form-control form-control-sm"
-                                               type="number"
-                                               min="0"
-                                               max="65535"
-                                               value="@row.Value"
-                                               @onchange="args => UpdateHoldingRegister(row.Address, args)" />
+                                        @if (row.Area == RegisterArea.Coil)
+                                        {
+                                            <div class="form-check form-switch mb-0">
+                                                <input class="form-check-input"
+                                                       type="checkbox"
+                                                       role="switch"
+                                                       checked="@row.BoolValue"
+                                                       @onchange="args => UpdateCoil(row.Address, args)" />
+                                                <span class="ms-2">
+                                                    @(row.BoolValue ? "1 / ON" : "0 / OFF")
+                                                </span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <input class="form-control form-control-sm"
+                                                   type="number"
+                                                   min="0"
+                                                   max="65535"
+                                                   value="@row.Value"
+                                                   @onchange="args => UpdateHoldingRegister(row.Address, args)" />
+                                        }
                                     </td>
-                                    <td class="font-monospace">0x@(row.Value.ToString("X4"))</td>
-                                    <td class="font-monospace">
-                                        @Convert.ToString(row.Value, 2).PadLeft(16, '0')
-                                    </td>
+                                    <td class="font-monospace">@row.HexText</td>
+                                    <td class="font-monospace">@row.BinaryText</td>
+                                    <td>@row.LastAccessedUtc.ToLocalTime().ToString("HH:mm:ss")</td>
                                 </tr>
                             }
-                        </tbody>
-                    </table>
-                </div>
-            }
+                        }
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -328,8 +271,8 @@
     private IReadOnlyList<ModbusFrameRecord> _modbusFrames =
         Array.Empty<ModbusFrameRecord>();
 
-    private readonly List<CoilRow> _coilRows = new();
-    private readonly List<HoldingRegisterRow> _holdingRegisterRows = new();
+    private IReadOnlyList<SlaveRegisterRow> _registerRows =
+        Array.Empty<SlaveRegisterRow>();
 
     private readonly TcpServerSettings _settings = new()
     {
@@ -339,9 +282,6 @@
         ReceiveBufferSize = 4096
     };
 
-    private RegisterTable _activeTable = RegisterTable.Coils;
-    private int _startAddress;
-    private int _visibleAddressCount = 16;
     private bool _isBusy;
     private bool _isServerError;
     private bool _isRegisterError;
@@ -357,7 +297,7 @@
         TcpServer.ServerError += OnServerError;
 
         ModbusFrameStore.DataChanged += OnModbusFrameStoreChanged;
-        RegisterManager.ValueChanged += OnRegisterValueChanged;
+        SlaveRegisterViewStore.Changed += OnSlaveRegisterViewStoreChanged;
 
         RefreshModbusFrames();
         RefreshRegisterRows();
@@ -418,75 +358,9 @@
         }
     }
 
-    private void SelectTable(RegisterTable table)
+    private void RefreshRegisterRows()
     {
-        _activeTable = table;
-        _registerMessage = null;
-        RefreshRegisterRows();
-    }
-
-    private void ApplyAddressRange()
-    {
-        RefreshRegisterRows(showSuccessMessage: true);
-    }
-
-    private void RefreshRegisterRows(bool showSuccessMessage = false)
-    {
-        if (!TryValidateAddressRange(out ushort startAddress, out ushort quantity))
-        {
-            return;
-        }
-
-        bool[] coils = RegisterManager.ReadCoils(startAddress, quantity);
-        ushort[] registers = RegisterManager.ReadHoldingRegisters(startAddress, quantity);
-
-        _coilRows.Clear();
-        _holdingRegisterRows.Clear();
-
-        for (int index = 0; index < quantity; index++)
-        {
-            ushort address = (ushort)(startAddress + index);
-            _coilRows.Add(new CoilRow(address, coils[index]));
-            _holdingRegisterRows.Add(new HoldingRegisterRow(address, registers[index]));
-        }
-
-        _isRegisterError = false;
-
-        if (showSuccessMessage)
-        {
-            _registerMessage =
-                $"{startAddress}–{startAddress + quantity - 1} adresleri yüklendi.";
-        }
-    }
-
-    private bool TryValidateAddressRange(
-        out ushort startAddress,
-        out ushort quantity)
-    {
-        startAddress = 0;
-        quantity = 0;
-
-        if (_startAddress < 0 || _startAddress >= RegisterManager.RegisterCount)
-        {
-            SetRegisterError("Başlangıç adresi 0 ile 65535 arasında olmalıdır.");
-            return false;
-        }
-
-        if (_visibleAddressCount < 1 || _visibleAddressCount > 100)
-        {
-            SetRegisterError("Gösterilecek adres sayısı 1 ile 100 arasında olmalıdır.");
-            return false;
-        }
-
-        if (_startAddress + _visibleAddressCount > RegisterManager.RegisterCount)
-        {
-            SetRegisterError("Başlangıç adresi ve adres sayısı Modbus sınırını aşıyor.");
-            return false;
-        }
-
-        startAddress = (ushort)_startAddress;
-        quantity = (ushort)_visibleAddressCount;
-        return true;
+        _registerRows = SlaveRegisterViewStore.GetRows();
     }
 
     private void UpdateCoil(ushort address, ChangeEventArgs args)
@@ -540,8 +414,7 @@
         _registerMessage = message;
     }
 
-    private void OnRegisterValueChanged(
-        RegisterValueChangedEventArgs change)
+    private void OnSlaveRegisterViewStoreChanged()
     {
         _ = InvokeAsync(() =>
         {
@@ -621,7 +494,7 @@
         {
             0x01 => "Read Coils",
             0x03 => "Read Holding Registers",
-            0x06 => "Write Single Register",
+            0x06 => "Write Single Holding Register",
             _ => "Bilinmeyen fonksiyon"
         };
     }
@@ -634,16 +507,21 @@
         TcpServer.ServerError -= OnServerError;
 
         ModbusFrameStore.DataChanged -= OnModbusFrameStoreChanged;
-        RegisterManager.ValueChanged -= OnRegisterValueChanged;
+        SlaveRegisterViewStore.Changed -= OnSlaveRegisterViewStoreChanged;
     }
 
-    private enum RegisterTable
+    private static string GetAreaName(RegisterArea area)
     {
-        Coils,
-        HoldingRegisters
+        return area switch
+        {
+            RegisterArea.Coil => "Coil",
+            RegisterArea.HoldingRegister => "Holding Register",
+            _ => area.ToString()
+        };
     }
 
-    private sealed record CoilRow(ushort Address, bool Value);
-
-    private sealed record HoldingRegisterRow(ushort Address, ushort Value);
+    private static string GetRowKey(SlaveRegisterRow row)
+    {
+        return $"{row.Area}:{row.Address}";
+    }
 }
