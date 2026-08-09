@@ -49,6 +49,10 @@ public static class MauiProgram
             ModbusMasterService>();
 
         builder.Services.AddSingleton<
+            IModbusPollingService,
+            ModbusPollingService>();
+
+        builder.Services.AddSingleton<
             IRegisterManager,
             RegisterManager>();
 

@@ -5,75 +5,93 @@
 @implements IDisposable
 
 @inject IModbusMasterService ModbusMaster
+@inject IModbusPollingService Polling
 @inject IModbusMasterResponseStore ResponseStore
 
-<PageTitle>Merkezî Master Modu</PageTitle>
+<PageTitle>Modbus TCP Master</PageTitle>
 
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h1 class="mb-0">Merkezî Master Modu</h1>
-        <span class="badge bg-dark">FC01 · FC03 · FC06</span>
+<div class="container-fluid modbus-page px-3 px-lg-4 py-4">
+    <div class="page-hero d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <span class="page-eyebrow">MODBUS TCP İSTASYONU</span>
+            <h1 class="mb-1">Master Kontrol Merkezi</h1>
+            <p class="mb-0">Bağlantıyı yönetin, komut gönderin ve otomatik okumaları izleyin.</p>
+        </div>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            <span class="connection-pill @(ModbusMaster.IsConnected ? "is-online" : "is-offline")">
+                <span class="status-dot"></span>
+                @(ModbusMaster.IsConnected ? "Slave'e bağlı" : "Bağlantı yok")
+            </span>
+            <a class="btn btn-light hero-back-button" href="/">Mod Seçimine Dön</a>
+        </div>
     </div>
 
-    <p class="text-muted mt-2">
-        TCP bağlantısı ve bütün Modbus işlemleri bu ekran üzerinden yönetilir.
-    </p>
-
-    <div class="card shadow-sm mt-4">
+    <div class="card surface-card connection-card mt-4">
         <div class="card-body">
-            <div class="mb-3">
-                <label for="ipAddress" class="form-label">IP Adresi</label>
-                <input id="ipAddress"
-                       class="form-control"
-                       type="text"
-                       placeholder="127.0.0.1"
-                       @bind="_settings.IpAddress"
-                       disabled="@(_isBusy || ModbusMaster.IsConnected)" />
+            <div class="section-title-row">
+                <div>
+                    <span class="section-eyebrow">BAĞLANTI</span>
+                    <h2>Slave Bağlantısı</h2>
+                </div>
+                <span class="protocol-badge">TCP · FC01 · FC03 · FC06</span>
             </div>
 
-            <div class="mb-3">
-                <label for="port" class="form-label">Port</label>
-                <input id="port"
-                       class="form-control"
-                       type="number"
-                       min="1"
-                       max="65535"
-                       @bind="_settings.Port"
-                       disabled="@(_isBusy || ModbusMaster.IsConnected)" />
-            </div>
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5 col-md-6">
+                    <div class="mb-3">
+                        <label for="ipAddress" class="form-label">IP Adresi</label>
+                        <input id="ipAddress"
+                               class="form-control"
+                               type="text"
+                               placeholder="127.0.0.1"
+                               @bind="_settings.IpAddress"
+                               disabled="@(_isBusy || ModbusMaster.IsConnected)" />
+                    </div>
+                </div>
 
-            <div class="mb-3">
-                <strong>Bağlantı durumu: </strong>
+                <div class="col-lg-2 col-md-6">
+                    <div class="mb-3">
+                        <label for="port" class="form-label">Port</label>
+                        <input id="port"
+                               class="form-control"
+                               type="number"
+                               min="1"
+                               max="65535"
+                               @bind="_settings.Port"
+                               disabled="@(_isBusy || ModbusMaster.IsConnected)" />
+                    </div>
+                </div>
 
-                @if (ModbusMaster.IsConnected)
-                {
-                    <span class="badge bg-success">Bağlı</span>
-                }
-                else
-                {
-                    <span class="badge bg-danger">Bağlı Değil</span>
-                }
-            </div>
+                <div class="col-lg-2 col-md-6">
+                    <div class="connection-summary mb-3">
+                        <small>Bağlantı durumu</small>
+                        <strong>@(ModbusMaster.IsConnected ? "Bağlı" : "Bağlı değil")</strong>
+                        <span>@_settings.IpAddress:@_settings.Port</span>
+                    </div>
+                </div>
 
-            <div class="d-flex gap-2">
-                <button class="btn btn-primary"
-                        @onclick="ConnectAsync"
-                        disabled="@(_isBusy || ModbusMaster.IsConnected)">
-                    @(_isBusy && !ModbusMaster.IsConnected
-                        ? "Bağlanıyor..."
-                        : "Bağlan")
-                </button>
+                <div class="col-lg-3 col-md-6">
+                    <div class="d-flex gap-2 mb-3 connection-actions">
+                        <button class="btn btn-primary"
+                                @onclick="ConnectAsync"
+                                disabled="@(_isBusy || ModbusMaster.IsConnected)">
+                            @(_isBusy && !ModbusMaster.IsConnected
+                                ? "Bağlanıyor..."
+                                : "Bağlan")
+                        </button>
 
-                <button class="btn btn-danger"
-                        @onclick="DisconnectAsync"
-                        disabled="@(_isBusy || !ModbusMaster.IsConnected)">
-                    Bağlantıyı Kes
-                </button>
+                        <button class="btn btn-danger"
+                                @onclick="DisconnectAsync"
+                                disabled="@(_isBusy || !ModbusMaster.IsConnected)">
+                            Bağlantıyı Kes
+                        </button>
+                    </div>
+                </div>
             </div>
 
             @if (!string.IsNullOrWhiteSpace(_message))
             {
-                <div class="alert @(_isError ? "alert-danger" : "alert-success") mt-3"
+                <div class="alert @GetMessageAlertClass() mt-3"
                      role="alert">
                     @_message
                 </div>
@@ -81,12 +99,203 @@
         </div>
     </div>
 
-    <div class="card shadow-sm mt-4">
+    <div class="card surface-card polling-card mt-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h5 class="card-title mb-0">Modbus İşlemi</h5>
-                <span class="badge bg-primary">
-                    Function @_selectedFunctionCode.ToString("X2")
+                <div>
+                    <span class="section-eyebrow">OTOMATİK OKUMA</span>
+                    <h2 class="card-title mb-0">Polling</h2>
+                </div>
+
+                @if (Polling.Status.IsRunning)
+                {
+                    <span class="connection-pill is-online"><span class="status-dot"></span>Çalışıyor</span>
+                }
+                else
+                {
+                    <span class="connection-pill is-idle"><span class="status-dot"></span>Durduruldu</span>
+                }
+            </div>
+
+            <p class="text-muted mt-2">
+                FC01 veya FC03 isteğini belirlenen aralıkla otomatik gönderir.
+                FC06 yazma işlemi güvenlik nedeniyle polling'e alınmaz.
+            </p>
+
+            <div class="row">
+                <div class="col-md-2 mb-3">
+                    <label for="pollingFunction" class="form-label">
+                        Okuma Fonksiyonu
+                    </label>
+                    <select id="pollingFunction"
+                            class="form-select"
+                            @bind="_pollingSettings.FunctionCode"
+                            disabled="@(Polling.Status.IsRunning || _isPollingActionBusy)">
+                        <option value="1">FC01 — Read Coils</option>
+                        <option value="3">FC03 — Read Holding Registers</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2 mb-3">
+                    <label for="pollingUnitId" class="form-label">Unit ID</label>
+                    <input id="pollingUnitId"
+                           class="form-control"
+                           type="number"
+                           min="0"
+                           max="255"
+                           @bind="_pollingSettings.UnitId"
+                           disabled="@(Polling.Status.IsRunning || _isPollingActionBusy)" />
+                </div>
+
+                <div class="col-md-2 mb-3">
+                    <label for="pollingAddress" class="form-label">
+                        Başlangıç Adresi
+                    </label>
+                    <input id="pollingAddress"
+                           class="form-control"
+                           type="number"
+                           min="0"
+                           max="65535"
+                           @bind="_pollingSettings.StartingAddress"
+                           disabled="@(Polling.Status.IsRunning || _isPollingActionBusy)" />
+                </div>
+
+                <div class="col-md-2 mb-3">
+                    <label for="pollingQuantity" class="form-label">Miktar</label>
+                    <input id="pollingQuantity"
+                           class="form-control"
+                           type="number"
+                           min="1"
+                           max="@PollingMaximumQuantity"
+                           @bind="_pollingSettings.Quantity"
+                           disabled="@(Polling.Status.IsRunning || _isPollingActionBusy)" />
+                </div>
+
+                <div class="col-md-2 mb-3">
+                    <label for="pollingInterval" class="form-label">
+                        Polling Aralığı (ms)
+                    </label>
+                    <input id="pollingInterval"
+                           class="form-control"
+                           type="number"
+                           min="200"
+                           max="60000"
+                           step="100"
+                           @bind="_pollingSettings.IntervalMilliseconds"
+                           disabled="@(Polling.Status.IsRunning || _isPollingActionBusy)" />
+                </div>
+
+                <div class="col-12">
+                    <details class="advanced-settings mb-3">
+                        <summary>Gelişmiş Ayarlar</summary>
+                        <div class="advanced-settings-body">
+                            <div class="advanced-field">
+                                <label for="pollingTimeout" class="form-label">
+                                    Her okuma için zaman aşımı (ms)
+                                </label>
+                                <input id="pollingTimeout"
+                                       class="form-control"
+                                       type="number"
+                                       min="100"
+                                       max="60000"
+                                       step="100"
+                                       @bind="_pollingSettings.RequestTimeoutMilliseconds"
+                                       disabled="@(Polling.Status.IsRunning || _isPollingActionBusy)" />
+                            </div>
+                            <p class="advanced-help mb-0">
+                                FC06 yazma işlemi güvenlik nedeniyle polling'e alınmaz.
+                            </p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-success"
+                        @onclick="StartPollingAsync"
+                        disabled="@(_isPollingActionBusy || Polling.Status.IsRunning || !ModbusMaster.IsConnected)">
+                    @(_isPollingActionBusy && !Polling.Status.IsRunning
+                        ? "Başlatılıyor..."
+                        : "Polling'i Başlat")
+                </button>
+
+                <button class="btn btn-outline-danger"
+                        @onclick="StopPollingAsync"
+                        disabled="@(_isPollingActionBusy || !Polling.Status.IsRunning)">
+                    Polling'i Durdur
+                </button>
+            </div>
+
+            <div class="row g-2 mt-3 metric-row">
+                <div class="col-md-2">
+                    <div class="metric-card h-100">
+                        <small class="text-muted d-block">Başarılı okuma</small>
+                        <strong>@Polling.Status.SuccessfulPollCount</strong>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="metric-card h-100">
+                        <small class="text-muted d-block">Hatalı okuma</small>
+                        <strong>@Polling.Status.FailedPollCount</strong>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="metric-card h-100">
+                        <small class="text-muted d-block">Timeout</small>
+                        <strong>@Polling.Status.TimedOutPollCount</strong>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card h-100">
+                        <small class="text-muted d-block">Son başarılı okuma</small>
+                        <strong>@FormatPollingTime(Polling.Status.LastSuccessfulPollAt)</strong>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card h-100">
+                        <small class="text-muted d-block">Aktif ayar</small>
+                        <strong>@GetPollingSummary(Polling.Status)</strong>
+                    </div>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Polling.Status.LastError))
+            {
+                <div class="alert alert-danger mt-3 mb-0" role="alert">
+                    <strong>Son polling hatası:</strong> @Polling.Status.LastError
+                </div>
+            }
+
+            @if (Polling.Status.LastResult is ModbusMasterOperationResult pollingResult)
+            {
+                <div class="mt-3">
+                    <strong>Son polling isteği:</strong>
+                    <div class="border rounded bg-dark text-light p-2 mt-1 font-monospace">
+                        @pollingResult.RequestHex
+                    </div>
+                    <div class="mt-2 text-muted">
+                        Transaction ID: @pollingResult.TransactionId,
+                        Function Code: @pollingResult.FunctionCode.ToString("X2")
+                    </div>
+                </div>
+            }
+
+            <div class="alert alert-info mt-3 mb-0">
+                Polling sayfa geçişlerinde çalışmaya devam eder. Master ekranına
+                döndüğünüzde sayaçlar ve son sonuç korunur.
+            </div>
+        </div>
+    </div>
+
+    <div class="card surface-card operation-card mt-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <span class="section-eyebrow">MANUEL İŞLEM</span>
+                    <h2 class="card-title mb-0">Modbus Komutu</h2>
+                </div>
+                <span class="function-badge">
+                    FC@(_selectedFunctionCode.ToString("D2"))
                 </span>
             </div>
 
@@ -161,11 +370,51 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary"
-                    @onclick="SendSelectedOperationAsync"
-                    disabled="@(_isBusy || !ModbusMaster.IsConnected)">
-                @(_isBusy ? "İşlem sürüyor..." : "İşlemi Gönder")
-            </button>
+            <details class="advanced-settings mb-3">
+                <summary>Gelişmiş Ayarlar</summary>
+                <div class="advanced-settings-body">
+                    <div class="advanced-field">
+                        <label for="requestTimeout" class="form-label">
+                            İstek zaman aşımı (ms)
+                        </label>
+                        <input id="requestTimeout"
+                               class="form-control"
+                               type="number"
+                               min="100"
+                               max="60000"
+                               step="100"
+                               @bind="_requestOptions.TimeoutMilliseconds"
+                               disabled="@(_isBusy || !ModbusMaster.IsConnected)" />
+                    </div>
+                    <p class="advanced-help mb-0">
+                        Her manuel istek için ayrı uygulanır. Varsayılan değer 3000 ms'dir.
+                    </p>
+                </div>
+            </details>
+
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-primary"
+                        @onclick="SendSelectedOperationAsync"
+                        disabled="@(_isBusy || !ModbusMaster.IsConnected)">
+                    @(_isManualOperationRunning
+                        ? "Cevap bekleniyor..."
+                        : "İşlemi Gönder")
+                </button>
+
+                <button class="btn btn-outline-warning"
+                        @onclick="CancelManualOperation"
+                        disabled="@(!_isManualOperationRunning)">
+                    İsteği İptal Et
+                </button>
+            </div>
+
+            @if (_isManualOperationRunning)
+            {
+                <div class="alert alert-info mt-3 mb-0">
+                    Slave cevabı bekleniyor. İstek en fazla
+                    @_requestOptions.TimeoutMilliseconds ms bekleyecek.
+                </div>
+            }
 
             @if (!string.IsNullOrWhiteSpace(_lastModbusRequestHex))
             {
@@ -184,10 +433,13 @@
         </div>
     </div>
 
-    <div class="card shadow-sm mt-4">
+    <div class="card surface-card results-card mt-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">İşlem Sonuçları</h5>
+                <div>
+                    <span class="section-eyebrow">CEVAPLAR</span>
+                    <h2 class="card-title mb-0">İşlem Sonuçları</h2>
+                </div>
                 <button class="btn btn-sm btn-outline-danger"
                         @onclick="ClearModbusResponses"
                         disabled="@(ResponseStore.Items.Count == 0)">
@@ -289,7 +541,6 @@
         </div>
     </div>
 
-    <a class="btn btn-secondary mt-3" href="/">Mod Seçimine Dön</a>
 </div>
 
 @code {
@@ -304,6 +555,21 @@
         ConnectionTimeoutMilliseconds = 5000
     };
 
+    private readonly ModbusPollingSettings _pollingSettings = new()
+    {
+        FunctionCode = ReadHoldingRegistersFunctionCode,
+        UnitId = 1,
+        StartingAddress = 101,
+        Quantity = 1,
+        IntervalMilliseconds = 1000,
+        RequestTimeoutMilliseconds = 3000
+    };
+
+    private readonly ModbusRequestOptions _requestOptions = new()
+    {
+        TimeoutMilliseconds = 3000
+    };
+
     private byte _selectedFunctionCode = ReadHoldingRegistersFunctionCode;
     private byte _unitId = 1;
     private ushort _operationAddress;
@@ -314,13 +580,38 @@
     private byte _lastFunctionCode;
     private string? _lastModbusRequestHex;
     private bool _isBusy;
+    private bool _isManualOperationRunning;
+    private bool _isPollingActionBusy;
     private bool _isError;
+    private bool _isWarning;
     private string? _message;
+    private CancellationTokenSource? _manualOperationCancellation;
 
     protected override void OnInitialized()
     {
+        LoadPollingSettingsFromStatus();
+
         ModbusMaster.ConnectionStateChanged += OnConnectionStateChanged;
+        Polling.StatusChanged += OnPollingStatusChanged;
         ResponseStore.DataChanged += OnResponseStoreChanged;
+    }
+
+    private void LoadPollingSettingsFromStatus()
+    {
+        ModbusPollingStatus status = Polling.Status;
+
+        if (status.StartedAt is null)
+        {
+            return;
+        }
+
+        _pollingSettings.FunctionCode = status.FunctionCode;
+        _pollingSettings.UnitId = status.UnitId;
+        _pollingSettings.StartingAddress = status.StartingAddress;
+        _pollingSettings.Quantity = status.Quantity;
+        _pollingSettings.IntervalMilliseconds = status.IntervalMilliseconds;
+        _pollingSettings.RequestTimeoutMilliseconds =
+            status.RequestTimeoutMilliseconds;
     }
 
     private string AddressLabel =>
@@ -335,6 +626,11 @@
 
     private int MaximumQuantity =>
         _selectedFunctionCode == ReadCoilsFunctionCode
+            ? 2000
+            : 125;
+
+    private int PollingMaximumQuantity =>
+        _pollingSettings.FunctionCode == ReadCoilsFunctionCode
             ? 2000
             : 125;
 
@@ -355,45 +651,157 @@
         await RunUiOperationAsync(
             async () =>
             {
+                await Polling.StopAsync();
                 await ModbusMaster.DisconnectAsync();
                 _message = "TCP bağlantısı kapatıldı.";
             },
             "Bağlantı kapatılırken hata oluştu");
     }
 
+    private async Task StartPollingAsync()
+    {
+        _isPollingActionBusy = true;
+        _isError = false;
+        _isWarning = false;
+        _message = null;
+
+        try
+        {
+            await Polling.StartAsync(_pollingSettings);
+            _message =
+                $"Polling başlatıldı: FC{_pollingSettings.FunctionCode:X2}, " +
+                $"adres {_pollingSettings.StartingAddress}, " +
+                $"miktar {_pollingSettings.Quantity}, " +
+                $"aralık {_pollingSettings.IntervalMilliseconds} ms, " +
+                $"timeout {_pollingSettings.RequestTimeoutMilliseconds} ms.";
+        }
+        catch (Exception exception)
+        {
+            _isError = true;
+            _message = $"Polling başlatılamadı: {exception.Message}";
+        }
+        finally
+        {
+            _isPollingActionBusy = false;
+        }
+    }
+
+    private async Task StopPollingAsync()
+    {
+        _isPollingActionBusy = true;
+        _isError = false;
+        _isWarning = false;
+        _message = null;
+
+        try
+        {
+            await Polling.StopAsync();
+            _message = "Polling güvenli biçimde durduruldu.";
+        }
+        catch (Exception exception)
+        {
+            _isError = true;
+            _message = $"Polling durdurulamadı: {exception.Message}";
+        }
+        finally
+        {
+            _isPollingActionBusy = false;
+        }
+    }
+
     private async Task SendSelectedOperationAsync()
     {
-        await RunUiOperationAsync(
-            async () =>
+        if (_isManualOperationRunning)
+        {
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _manualOperationCancellation = cancellation;
+        _isBusy = true;
+        _isManualOperationRunning = true;
+        _isError = false;
+        _isWarning = false;
+        _message = null;
+
+        try
+        {
+            ModbusMasterOperationResult result =
+                _selectedFunctionCode switch
+                {
+                    ReadCoilsFunctionCode =>
+                        await ModbusMaster.ReadCoilsAsync(
+                            _unitId,
+                            _operationAddress,
+                            _quantity,
+                            _requestOptions,
+                            cancellation.Token),
+
+                    ReadHoldingRegistersFunctionCode =>
+                        await ModbusMaster.ReadHoldingRegistersAsync(
+                            _unitId,
+                            _operationAddress,
+                            _quantity,
+                            _requestOptions,
+                            cancellation.Token),
+
+                    WriteSingleRegisterFunctionCode =>
+                        await ModbusMaster.WriteSingleHoldingRegisterAsync(
+                            _unitId,
+                            _operationAddress,
+                            _writeValue,
+                            _requestOptions,
+                            cancellation.Token),
+
+                    _ => throw new InvalidOperationException(
+                        "Desteklenmeyen Function ID seçildi.")
+                };
+
+            ShowCompletedOperation(result);
+        }
+        catch (ModbusRequestTimeoutException exception)
+        {
+            _isError = true;
+            _message = $"Modbus isteği zaman aşımına uğradı: {exception.Message}";
+        }
+        catch (OperationCanceledException)
+            when (cancellation.IsCancellationRequested)
+        {
+            _isWarning = true;
+            _message =
+                "Modbus isteği kullanıcı tarafından güvenli biçimde iptal edildi.";
+        }
+        catch (Exception exception)
+        {
+            _isError = true;
+            _message = $"Modbus işlemi tamamlanamadı: {exception.Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(_manualOperationCancellation, cancellation))
             {
-                ModbusMasterOperationResult result =
-                    _selectedFunctionCode switch
-                    {
-                        ReadCoilsFunctionCode =>
-                            await ModbusMaster.ReadCoilsAsync(
-                                _unitId,
-                                _operationAddress,
-                                _quantity),
+                _manualOperationCancellation = null;
+            }
 
-                        ReadHoldingRegistersFunctionCode =>
-                            await ModbusMaster.ReadHoldingRegistersAsync(
-                                _unitId,
-                                _operationAddress,
-                                _quantity),
+            cancellation.Dispose();
+            _isManualOperationRunning = false;
+            _isBusy = false;
+        }
+    }
 
-                        WriteSingleRegisterFunctionCode =>
-                            await ModbusMaster.WriteSingleHoldingRegisterAsync(
-                                _unitId,
-                                _operationAddress,
-                                _writeValue),
+    private void CancelManualOperation()
+    {
+        CancellationTokenSource? cancellation =
+            _manualOperationCancellation;
 
-                        _ => throw new InvalidOperationException(
-                            "Desteklenmeyen Function ID seçildi.")
-                    };
+        if (cancellation is null || cancellation.IsCancellationRequested)
+        {
+            return;
+        }
 
-                ShowCompletedOperation(result);
-            },
-            "Modbus işlemi tamamlanamadı");
+        _isWarning = true;
+        _message = "İptal isteği gönderildi; işlem sonlandırılıyor...";
+        cancellation.Cancel();
     }
 
     private async Task RunUiOperationAsync(
@@ -402,6 +810,7 @@
     {
         _isBusy = true;
         _isError = false;
+        _isWarning = false;
         _message = null;
 
         try
@@ -452,6 +861,11 @@
         _ = InvokeAsync(StateHasChanged);
     }
 
+    private void OnPollingStatusChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     private void ClearModbusResponses()
     {
         ResponseStore.Clear();
@@ -491,9 +905,48 @@
         };
     }
 
+    private static string FormatPollingTime(DateTime? value)
+    {
+        return value?.ToString("HH:mm:ss") ?? "—";
+    }
+
+    private string GetMessageAlertClass()
+    {
+        if (_isError)
+        {
+            return "alert-danger";
+        }
+
+        return _isWarning
+            ? "alert-warning"
+            : "alert-success";
+    }
+
+    private static string GetPollingSummary(ModbusPollingStatus status)
+    {
+        if (status.StartedAt is null)
+        {
+            return "Henüz başlatılmadı";
+        }
+
+        return $"FC{status.FunctionCode:X2} · Adres {status.StartingAddress} · " +
+            $"{status.Quantity} adet · {status.IntervalMilliseconds} ms · " +
+            $"timeout {status.RequestTimeoutMilliseconds} ms";
+    }
+
     public void Dispose()
     {
+        try
+        {
+            _manualOperationCancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // İşlem aynı anda tamamlandıysa ek işlem gerekmez.
+        }
+
         ModbusMaster.ConnectionStateChanged -= OnConnectionStateChanged;
+        Polling.StatusChanged -= OnPollingStatusChanged;
         ResponseStore.DataChanged -= OnResponseStoreChanged;
     }
 }

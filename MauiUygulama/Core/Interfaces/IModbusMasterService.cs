@@ -18,17 +18,20 @@ public interface IModbusMasterService
         byte unitId,
         ushort startingAddress,
         ushort quantity,
+        ModbusRequestOptions? options = null,
         CancellationToken cancellationToken = default);
 
     Task<ModbusMasterOperationResult> ReadHoldingRegistersAsync(
         byte unitId,
         ushort startingAddress,
         ushort quantity,
+        ModbusRequestOptions? options = null,
         CancellationToken cancellationToken = default);
 
     Task<ModbusMasterOperationResult> WriteSingleHoldingRegisterAsync(
         byte unitId,
         ushort address,
         ushort value,
+        ModbusRequestOptions? options = null,
         CancellationToken cancellationToken = default);
 }

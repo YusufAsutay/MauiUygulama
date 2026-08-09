@@ -19,11 +19,14 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
     private readonly object _pendingLock = new();
     private readonly object _receiveLoopLock = new();
     private readonly object _ignoredTransactionsLock = new();
-    private readonly HashSet<ushort> _ignoredTransactionIds = new();
+    private readonly Dictionary<ushort, long> _ignoredTransactionIds = new();
+    private readonly Queue<(ushort TransactionId, long Sequence)>
+        _ignoredTransactionOrder = new();
 
     private ushort _nextTransactionId = 1;
     private PendingOperation? _pendingOperation;
     private CancellationTokenSource? _receiveCancellation;
+    private long _ignoredTransactionSequence;
     private bool _isDisposed;
 
     public ModbusMasterService(
@@ -96,6 +99,7 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
         byte unitId,
         ushort startingAddress,
         ushort quantity,
+        ModbusRequestOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ValidateReadRange(
@@ -109,6 +113,7 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
             ReadCoilsFunctionCode,
             startingAddress,
             quantity,
+            options,
             cancellationToken);
     }
 
@@ -116,6 +121,7 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
         byte unitId,
         ushort startingAddress,
         ushort quantity,
+        ModbusRequestOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ValidateReadRange(
@@ -129,6 +135,7 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
             ReadHoldingRegistersFunctionCode,
             startingAddress,
             quantity,
+            options,
             cancellationToken);
     }
 
@@ -136,6 +143,7 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
         byte unitId,
         ushort address,
         ushort value,
+        ModbusRequestOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         return ExecuteAsync(
@@ -143,6 +151,7 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
             WriteSingleRegisterFunctionCode,
             address,
             value,
+            options,
             cancellationToken);
     }
 
@@ -151,10 +160,19 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
         byte functionCode,
         ushort startAddress,
         ushort quantityOrValue,
+        ModbusRequestOptions? options,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
+        ModbusRequestOptions optionsSnapshot =
+            (options ?? new ModbusRequestOptions()).Copy();
+
+        ValidateRequestOptions(optionsSnapshot);
+
+        // Timeout, işlem servis sırasına girdikten sonra başlar. Kilidi bekleme
+        // süresi istek timeout süresinden sayılmaz; kullanıcı iptali ise bekleyen
+        // işlemi de hemen sonlandırabilir.
         await _operationLock.WaitAsync(cancellationToken);
 
         try
@@ -183,13 +201,40 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
 
             SetPendingOperation(pending);
 
+            using var timeoutCancellation = new CancellationTokenSource(
+                optionsSnapshot.TimeoutMilliseconds);
+            using var operationCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    timeoutCancellation.Token);
+
             try
             {
                 pending.RequestWasSent = true;
-                await _tcpClient.SendAsync(request, cancellationToken);
+                await _tcpClient.SendAsync(
+                    request,
+                    operationCancellation.Token);
 
                 return await pending.Completion.Task.WaitAsync(
+                    operationCancellation.Token);
+            }
+            catch (OperationCanceledException exception)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(
+                    $"Transaction ID {transactionId} için FC{functionCode:X2} " +
+                    "isteği kullanıcı veya üst işlem tarafından iptal edildi.",
+                    exception,
                     cancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (timeoutCancellation.IsCancellationRequested)
+            {
+                throw new ModbusRequestTimeoutException(
+                    transactionId,
+                    functionCode,
+                    startAddress,
+                    optionsSnapshot.TimeoutMilliseconds);
             }
             finally
             {
@@ -330,10 +375,9 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
 
         if (transactionId != pending.TransactionId)
         {
-            pending.Completion.TrySetException(
-                new InvalidDataException(
-                    $"Transaction ID eşleşmedi. " +
-                    $"Beklenen: {pending.TransactionId}, alınan: {transactionId}."));
+            // Eski veya başka bir isteğe ait çerçeve aktif işlemi bozmamalıdır.
+            // Aktif istek kendi Transaction ID cevabını timeout süresine kadar
+            // beklemeye devam eder.
             return;
         }
 
@@ -623,17 +667,29 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
 
     private void RememberIgnoredTransaction(ushort transactionId)
     {
-        const int maximumRememberedTransactionCount = 100;
+        const int maximumRememberedTransactionCount = 4096;
 
         lock (_ignoredTransactionsLock)
         {
-            if (_ignoredTransactionIds.Count >=
-                maximumRememberedTransactionCount)
-            {
-                _ignoredTransactionIds.Clear();
-            }
+            long sequence = ++_ignoredTransactionSequence;
 
-            _ignoredTransactionIds.Add(transactionId);
+            _ignoredTransactionIds[transactionId] = sequence;
+            _ignoredTransactionOrder.Enqueue((transactionId, sequence));
+
+            while (_ignoredTransactionOrder.Count >
+                   maximumRememberedTransactionCount)
+            {
+                (ushort oldestTransactionId, long oldestSequence) =
+                    _ignoredTransactionOrder.Dequeue();
+
+                if (_ignoredTransactionIds.TryGetValue(
+                        oldestTransactionId,
+                        out long currentSequence) &&
+                    currentSequence == oldestSequence)
+                {
+                    _ignoredTransactionIds.Remove(oldestTransactionId);
+                }
+            }
         }
     }
 
@@ -642,6 +698,22 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
         lock (_ignoredTransactionsLock)
         {
             return _ignoredTransactionIds.Remove(transactionId);
+        }
+    }
+
+    private static void ValidateRequestOptions(
+        ModbusRequestOptions options)
+    {
+        if (options.TimeoutMilliseconds is
+            < ModbusRequestOptions.MinimumTimeoutMilliseconds or
+            > ModbusRequestOptions.MaximumTimeoutMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options.TimeoutMilliseconds),
+                $"İstek timeout değeri " +
+                $"{ModbusRequestOptions.MinimumTimeoutMilliseconds} ile " +
+                $"{ModbusRequestOptions.MaximumTimeoutMilliseconds} ms " +
+                "arasında olmalıdır.");
         }
     }
 

@@ -67,20 +67,42 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
-        <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
-        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+      <AndroidResource Remove="Components\Shared\**" />
+      <AndroidResource Remove="Core\Modbus\**" />
+      <AndroidResource Remove="Infrastructure\**" />
+      <AndroidResource Remove="Services\Logging\**" />
+      <AndroidResource Remove="Services\Registers\**" />
+      <Compile Remove="Components\Shared\**" />
+      <Compile Remove="Core\Modbus\**" />
+      <Compile Remove="Infrastructure\**" />
+      <Compile Remove="Services\Logging\**" />
+      <Compile Remove="Services\Registers\**" />
+      <Content Remove="Components\Shared\**" />
+      <Content Remove="Core\Modbus\**" />
+      <Content Remove="Infrastructure\**" />
+      <Content Remove="Services\Logging\**" />
+      <Content Remove="Services\Registers\**" />
+      <EmbeddedResource Remove="Components\Shared\**" />
+      <EmbeddedResource Remove="Core\Modbus\**" />
+      <EmbeddedResource Remove="Infrastructure\**" />
+      <EmbeddedResource Remove="Services\Logging\**" />
+      <EmbeddedResource Remove="Services\Registers\**" />
+      <MauiXaml Remove="Components\Shared\**" />
+      <MauiXaml Remove="Core\Modbus\**" />
+      <MauiXaml Remove="Infrastructure\**" />
+      <MauiXaml Remove="Services\Logging\**" />
+      <MauiXaml Remove="Services\Registers\**" />
+      <None Remove="Components\Shared\**" />
+      <None Remove="Core\Modbus\**" />
+      <None Remove="Infrastructure\**" />
+      <None Remove="Services\Logging\**" />
+      <None Remove="Services\Registers\**" />
     </ItemGroup>
 
     <ItemGroup>
-      <Folder Include="Components\Shared\" />
-      <Folder Include="Core\Modbus\Messages\" />
-      <Folder Include="Core\Modbus\Exceptions\" />
-      <Folder Include="Core\Modbus\Protocol\" />
-      <Folder Include="Infrastructure\Extensions\" />
-      <Folder Include="Infrastructure\Helpers\" />
-      <Folder Include="Services\Logging\" />
-      <Folder Include="Services\Registers\" />
+        <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
     </ItemGroup>
 
 </Project>

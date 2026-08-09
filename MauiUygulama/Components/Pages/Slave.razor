@@ -11,28 +11,38 @@
 @inject IRegisterManager RegisterManager
 @inject ISlaveRegisterViewStore SlaveRegisterViewStore
 
-<PageTitle>Merkezî Slave Modu</PageTitle>
+<PageTitle>Modbus TCP Slave</PageTitle>
 
-<div class="container-fluid px-4 py-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+<div class="container-fluid modbus-page px-3 px-lg-4 py-4">
+    <div class="page-hero d-flex flex-wrap justify-content-between align-items-center gap-3">
         <div>
-            <h1 class="mb-1">Merkezî Slave Modu</h1>
-            <p class="text-muted mb-0">
-                Master tarafından erişilen adresleri otomatik izleyin ve Slave değerlerini yönetin.
+            <span class="page-eyebrow">MODBUS TCP İSTASYONU</span>
+            <h1 class="mb-1">Slave Kontrol Merkezi</h1>
+            <p class="mb-0">
+                İstekleri izleyin, register değerlerini yönetin ve sunucu durumunu takip edin.
             </p>
         </div>
 
         <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-primary">İnteraktif Register Yönetimi</span>
-            <a class="btn btn-outline-secondary" href="/">
+            <span class="connection-pill @(TcpServer.IsRunning ? "is-online" : "is-offline")">
+                <span class="status-dot"></span>
+                @(TcpServer.IsRunning ? "Sunucu çalışıyor" : "Sunucu kapalı")
+            </span>
+            <a class="btn btn-light hero-back-button" href="/">
                 Mod Seçimine Dön
             </a>
         </div>
     </div>
 
-    <div class="card shadow-sm mt-4">
+    <div class="card surface-card connection-card mt-4">
         <div class="card-header bg-white py-3">
-            <h5 class="mb-0">Slave TCP Sunucusu</h5>
+            <div class="section-title-row">
+                <div>
+                    <span class="section-eyebrow">BAĞLANTI</span>
+                    <h2 class="mb-0">Slave TCP Sunucusu</h2>
+                </div>
+                <span class="protocol-badge">TCP · 0–65535 adres</span>
+            </div>
         </div>
 
         <div class="card-body">
@@ -63,17 +73,9 @@
                 </div>
 
                 <div class="col-lg-3 col-md-6">
-                    <div class="mb-1">
-                        <strong>Sunucu durumu:</strong>
-                        <span class="badge @(TcpServer.IsRunning ? "bg-success" : "bg-danger") ms-1">
-                            @(TcpServer.IsRunning ? "Çalışıyor" : "Durduruldu")
-                        </span>
-                    </div>
-                    <div>
-                        <strong>Bağlı Master:</strong>
-                        <span class="badge bg-primary ms-1">
-                            @TcpServer.ConnectedClientCount
-                        </span>
+                    <div class="server-stats">
+                        <div><small>Sunucu</small><strong>@(TcpServer.IsRunning ? "Çalışıyor" : "Durduruldu")</strong></div>
+                        <div><small>Bağlı Master</small><strong>@TcpServer.ConnectedClientCount</strong></div>
                     </div>
                 </div>
 
@@ -106,18 +108,19 @@
         </div>
     </div>
 
-    <div class="card shadow-sm mt-4">
+    <div class="card surface-card register-card mt-4">
         <div class="card-header bg-white py-3">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div>
-                    <h5 class="mb-1">Slave Veri Alanı</h5>
+                    <span class="section-eyebrow">REGISTER YÖNETİMİ</span>
+                    <h2 class="mb-1">Slave Veri Alanı</h2>
                     <small class="text-muted">
                         Başarılı Modbus isteklerindeki adresler otomatik olarak bu tabloya eklenir.
                     </small>
                 </div>
 
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                    <span class="badge bg-primary">
+                    <span class="count-badge">
                         @VisibleRegisterRows.Count / @_registerRows.Count adres gösteriliyor
                     </span>
                     <button class="btn btn-sm btn-outline-primary"
@@ -134,7 +137,7 @@
         </div>
 
         <div class="card-body">
-            <div class="row g-3 align-items-end mb-3">
+            <div class="row g-3 align-items-end mb-3 filter-toolbar">
                 <div class="col-lg-4 col-md-6">
                     <label for="registerTypeFilter" class="form-label">
                         Register Türü
@@ -248,9 +251,13 @@
                             @foreach (SlaveRegisterRow row in VisibleRegisterRows)
                             {
                                 <tr @key="GetRowKey(row)">
-                                    <td>@GetAreaName(row.Area)</td>
+                                    <td>
+                                        <span class="area-badge @(row.Area == RegisterArea.Coil ? "coil-badge" : "holding-badge")">
+                                            @GetAreaName(row.Area)
+                                        </span>
+                                    </td>
                                     <td class="fw-semibold">@row.Address</td>
-                                    <td>FC@(row.FunctionCode.ToString("D2"))</td>
+                                    <td><span class="function-badge">FC@(row.FunctionCode.ToString("D2"))</span></td>
                                     <td style="min-width: 170px;">
                                         @if (row.Area == RegisterArea.Coil)
                                         {
@@ -287,10 +294,13 @@
         </div>
     </div>
 
-    <div class="card shadow-sm mt-4">
+    <div class="card surface-card history-card mt-4">
         <div class="card-header bg-white py-3">
             <div class="d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Son Modbus İstekleri</h5>
+                <div>
+                    <span class="section-eyebrow">İSTEK GEÇMİŞİ</span>
+                    <h2 class="mb-0">Son Modbus İstekleri</h2>
+                </div>
                 <button class="btn btn-sm btn-outline-danger"
                         @onclick="ShowClearHistoryConfirmation"
                         disabled="@(_modbusFrames.Count == 0)">
