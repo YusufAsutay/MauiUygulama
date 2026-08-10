@@ -12,11 +12,6 @@ public sealed class ModbusRequestProcessor :
     private const byte ReadHoldingRegistersFunctionCode = 0x03;
     private const byte WriteSingleRegisterFunctionCode = 0x06;
 
-    private const byte IllegalFunctionExceptionCode = 0x01;
-    private const byte IllegalDataAddressExceptionCode = 0x02;
-    private const byte IllegalDataValueExceptionCode = 0x03;
-    private const byte ServerDeviceFailureExceptionCode = 0x04;
-
     private const ushort MinimumReadQuantity = 1;
     private const ushort MaximumReadCoilQuantity = 2000;
     private const ushort MaximumReadRegisterQuantity = 125;
@@ -85,7 +80,7 @@ public sealed class ModbusRequestProcessor :
                 await SendExceptionResponseAsync(
                     clientId,
                     frame,
-                    IllegalFunctionExceptionCode,
+                    ModbusExceptionCode.IllegalFunction,
                     cancellationToken);
                 break;
         }
@@ -104,7 +99,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataValueExceptionCode,
+                ModbusExceptionCode.IllegalDataValue,
                 cancellationToken);
 
             return;
@@ -116,7 +111,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataValueExceptionCode,
+                ModbusExceptionCode.IllegalDataValue,
                 cancellationToken);
 
             return;
@@ -135,7 +130,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataAddressExceptionCode,
+                ModbusExceptionCode.IllegalDataAddress,
                 cancellationToken);
 
             return;
@@ -174,7 +169,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataValueExceptionCode,
+                ModbusExceptionCode.IllegalDataValue,
                 cancellationToken);
 
             return;
@@ -186,7 +181,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataValueExceptionCode,
+                ModbusExceptionCode.IllegalDataValue,
                 cancellationToken);
 
             return;
@@ -204,7 +199,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataAddressExceptionCode,
+                ModbusExceptionCode.IllegalDataAddress,
                 cancellationToken);
 
             return;
@@ -240,7 +235,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataValueExceptionCode,
+                ModbusExceptionCode.IllegalDataValue,
                 cancellationToken);
 
             return;
@@ -257,7 +252,7 @@ public sealed class ModbusRequestProcessor :
             await SendExceptionResponseAsync(
                 clientId,
                 frame,
-                IllegalDataAddressExceptionCode,
+                ModbusExceptionCode.IllegalDataAddress,
                 cancellationToken);
 
             return;
@@ -359,7 +354,7 @@ public sealed class ModbusRequestProcessor :
                 await SendExceptionResponseAsync(
                     clientId,
                     frame,
-                    ServerDeviceFailureExceptionCode,
+                    ModbusExceptionCode.SlaveDeviceFailure,
                     CancellationToken.None);
             }
             catch (Exception sendException)
@@ -374,7 +369,7 @@ public sealed class ModbusRequestProcessor :
     private async Task SendExceptionResponseAsync(
         Guid clientId,
         ModbusTcpFrame request,
-        byte exceptionCode,
+        ModbusExceptionCode exceptionCode,
         CancellationToken cancellationToken)
     {
         byte[] response = CreateExceptionResponse(
@@ -551,7 +546,7 @@ public sealed class ModbusRequestProcessor :
 
     private static byte[] CreateExceptionResponse(
         ModbusTcpFrame request,
-        byte exceptionCode)
+        ModbusExceptionCode exceptionCode)
     {
         const ushort length = 3;
 
@@ -577,7 +572,7 @@ public sealed class ModbusRequestProcessor :
         response[7] =
             (byte)(request.FunctionCode | 0x80);
 
-        response[8] = exceptionCode;
+        response[8] = (byte)exceptionCode;
 
         return response;
     }

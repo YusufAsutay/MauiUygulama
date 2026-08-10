@@ -1,6 +1,7 @@
-﻿@* Merkezî Slave ekranı — filtreleme, sıralama ve güvenli temizleme sürümü *@
+﻿@* Merkezî Slave ekranı — adres haritası yapılandırması, filtreleme ve güvenli temizleme *@
 @page "/slave"
 
+@using System.Globalization
 @using MauiUygulama.Core.Interfaces
 @using MauiUygulama.Models
 
@@ -105,6 +106,160 @@
                     @_serverMessage
                 </div>
             }
+        </div>
+    </div>
+
+    <div class="card surface-card address-map-card mt-4">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    <span class="section-eyebrow">YEREL SLAVE YAPILANDIRMASI</span>
+                    <h2 class="mb-1">Slave Adres Haritası Yapılandırması</h2>
+                    <small class="text-muted">
+                        Master isteği oluşturmadan önce Slave üzerinde bulunacak adresleri tanımlayın.
+                    </small>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="count-badge">
+                        @_addressMapRows.Count tanımlı adres
+                    </span>
+                    <span class="connection-pill @(TcpServer.IsRunning ? "is-offline" : "is-online")">
+                        <span class="status-dot"></span>
+                        @(TcpServer.IsRunning ? "Harita kilitli" : "Harita düzenlenebilir")
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card-body">
+            @if (TcpServer.IsRunning)
+            {
+                <div class="alert alert-info py-2" role="alert">
+                    Adres haritasını değiştirmek için önce Slave sunucusunu durdurun.
+                    Sunucu çalışırken Master yalnızca önceden tanımlanmış adreslere erişebilir.
+                </div>
+            }
+
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3 col-md-6">
+                    <label for="newRegisterArea" class="form-label">
+                        Register Türü
+                    </label>
+                    <select id="newRegisterArea"
+                            class="form-select"
+                            @bind="_newRegisterArea"
+                            disabled="@IsAddressMapLocked">
+                        <option value="@RegisterArea.Coil">Coil</option>
+                        <option value="@RegisterArea.HoldingRegister">
+                            Holding Register
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-6">
+                    <label for="newRegisterAddress" class="form-label">
+                        Adres
+                    </label>
+                    <input id="newRegisterAddress"
+                           class="form-control"
+                           type="number"
+                           min="0"
+                           max="65535"
+                           @bind="_newAddressText"
+                           disabled="@IsAddressMapLocked" />
+                </div>
+
+                <div class="col-lg-3 col-md-6">
+                    @if (_newRegisterArea == RegisterArea.Coil)
+                    {
+                        <label class="form-label d-block">
+                            Başlangıç Değeri
+                        </label>
+                        <div class="form-check form-switch address-map-switch">
+                            <input id="newCoilInitialValue"
+                                   class="form-check-input"
+                                   type="checkbox"
+                                   role="switch"
+                                   @bind="_newCoilInitialValue"
+                                   disabled="@IsAddressMapLocked" />
+                            <label class="form-check-label" for="newCoilInitialValue">
+                                @(_newCoilInitialValue ? "1 / ON" : "0 / OFF")
+                            </label>
+                        </div>
+                    }
+                    else
+                    {
+                        <label for="newHoldingInitialValue" class="form-label">
+                            Başlangıç Değeri
+                        </label>
+                        <input id="newHoldingInitialValue"
+                               class="form-control"
+                               type="number"
+                               min="0"
+                               max="65535"
+                               @bind="_newHoldingInitialValueText"
+                               disabled="@IsAddressMapLocked" />
+                    }
+                </div>
+
+                <div class="col-lg-3 col-md-6">
+                    <button class="btn btn-primary w-100"
+                            @onclick="DefineAddress"
+                            disabled="@IsAddressMapLocked">
+                        Adresi Tanımla
+                    </button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_addressMapMessage))
+            {
+                <div class="alert @(_isAddressMapError ? "alert-danger" : "alert-success") mt-3 mb-0"
+                     role="alert">
+                    @_addressMapMessage
+                </div>
+            }
+
+            <div class="table-responsive border rounded mt-3">
+                <table class="table table-sm table-striped table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Tür</th>
+                            <th scope="col">Adres</th>
+                            <th scope="col">Mevcut Değer</th>
+                            <th scope="col">Hex</th>
+                            <th scope="col">Binary</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_addressMapRows.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    Henüz bir Coil veya Holding Register adresi tanımlanmadı.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (AddressMapRow row in _addressMapRows)
+                            {
+                                <tr @key="GetAddressMapRowKey(row)">
+                                    <td>
+                                        <span class="area-badge @(row.Area == RegisterArea.Coil ? "coil-badge" : "holding-badge")">
+                                            @GetAreaName(row.Area)
+                                        </span>
+                                    </td>
+                                    <td class="fw-semibold">@row.Address</td>
+                                    <td>@GetAddressMapValueText(row)</td>
+                                    <td class="font-monospace">@($"0x{row.Value:X4}")</td>
+                                    <td class="font-monospace">@Convert.ToString(row.Value, 2).PadLeft(16, '0')</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -282,7 +437,25 @@
                                                    @onchange="args => UpdateHoldingRegister(row.Address, args)" />
                                         }
                                     </td>
-                                    <td class="font-monospace">@row.HexText</td>
+                                    <td style="min-width: 150px;">
+                                        @if (row.Area == RegisterArea.HoldingRegister)
+                                        {
+                                            <input class="form-control form-control-sm font-monospace"
+                                                   type="text"
+                                                   value="@row.HexText"
+                                                   placeholder="0x0000"
+                                                   maxlength="6"
+                                                   @onchange="args => UpdateHoldingRegisterHex(
+                                                                                                                                                       row.Address,
+                                                                                                                                                       args)" />
+                                        }
+                                        else
+                                        {
+                                            <span class="font-monospace">
+                                                @row.HexText
+                                            </span>
+                                        }
+                                    </td>
                                     <td class="font-monospace">@row.BinaryText</td>
                                     <td>@row.LastAccessedUtc.ToLocalTime().ToString("HH:mm:ss")</td>
                                 </tr>
@@ -399,8 +572,12 @@
     private IReadOnlyList<SlaveRegisterRow> _registerRows =
         Array.Empty<SlaveRegisterRow>();
 
+    private IReadOnlyList<AddressMapRow> _addressMapRows =
+        Array.Empty<AddressMapRow>();
+
     private RegisterFilter _registerFilter = RegisterFilter.All;
     private RegisterSortOrder _registerSortOrder = RegisterSortOrder.AddressAscending;
+    private RegisterArea _newRegisterArea = RegisterArea.Coil;
 
     private readonly TcpServerSettings _settings = new()
     {
@@ -413,12 +590,17 @@
     private bool _isBusy;
     private bool _isServerError;
     private bool _isRegisterError;
+    private bool _isAddressMapError;
+    private bool _newCoilInitialValue;
     private bool _showClearTrackedRegistersConfirmation;
     private bool _showClearHistoryConfirmation;
     private string? _serverMessage;
     private string? _registerMessage;
+    private string? _addressMapMessage;
     private string? _modbusFrameError;
     private string? _modbusFrameMessage;
+    private string _newAddressText = "0";
+    private string _newHoldingInitialValueText = "0";
 
     private IReadOnlyList<SlaveRegisterRow> VisibleRegisterRows
     {
@@ -466,6 +648,9 @@
         _registerFilter == RegisterFilter.All &&
         _registerSortOrder == RegisterSortOrder.AddressAscending;
 
+    private bool IsAddressMapLocked =>
+        _isBusy || TcpServer.IsRunning;
+
     protected override void OnInitialized()
     {
         TcpServer.ServerStateChanged += OnServerStateChanged;
@@ -475,9 +660,11 @@
 
         ModbusFrameStore.DataChanged += OnModbusFrameStoreChanged;
         SlaveRegisterViewStore.Changed += OnSlaveRegisterViewStoreChanged;
+        RegisterManager.ValueChanged += OnRegisterManagerValueChanged;
 
         RefreshModbusFrames();
         RefreshRegisterRows();
+        RefreshAddressMapRows();
     }
 
     private async Task StartServerAsync()
@@ -535,6 +722,107 @@
         }
     }
 
+    private void DefineAddress()
+    {
+        _addressMapMessage = null;
+        _isAddressMapError = false;
+
+        if (TcpServer.IsRunning)
+        {
+            SetAddressMapError(
+                "Adres haritasını değiştirmek için önce Slave sunucusunu durdurun.");
+            return;
+        }
+
+        if (!ushort.TryParse(
+                _newAddressText?.Trim(),
+                out ushort address))
+        {
+            SetAddressMapError(
+                "Adres 0 ile 65535 arasında olmalıdır.");
+            return;
+        }
+
+        bool added;
+        string valueText;
+
+        switch (_newRegisterArea)
+        {
+            case RegisterArea.Coil:
+                added = RegisterManager.DefineCoil(
+                    address,
+                    _newCoilInitialValue);
+
+                valueText = _newCoilInitialValue
+                    ? "1 / ON"
+                    : "0 / OFF";
+                break;
+
+            case RegisterArea.HoldingRegister:
+                if (!ushort.TryParse(
+                        _newHoldingInitialValueText?.Trim(),
+                        out ushort holdingValue))
+                {
+                    SetAddressMapError(
+                        "Holding Register başlangıç değeri 0 ile 65535 arasında olmalıdır.");
+                    return;
+                }
+
+                added = RegisterManager.DefineHoldingRegister(
+                    address,
+                    holdingValue);
+
+                valueText = holdingValue.ToString();
+                break;
+
+            default:
+                SetAddressMapError(
+                    "Yalnızca Coil veya Holding Register tanımlanabilir.");
+                return;
+        }
+
+        if (!added)
+        {
+            SetAddressMapError(
+                $"{GetAreaName(_newRegisterArea)} {address} zaten tanımlı. " +
+                "Mevcut adresin üzerine yazılmadı.");
+            return;
+        }
+
+        RefreshAddressMapRows();
+        SetAddressMapSuccess(
+            $"{GetAreaName(_newRegisterArea)} {address}, " +
+            $"{valueText} başlangıç değeriyle tanımlandı.");
+
+        if (address < ushort.MaxValue)
+        {
+            _newAddressText = (address + 1).ToString();
+        }
+    }
+
+    private void RefreshAddressMapRows()
+    {
+        IEnumerable<AddressMapRow> coils =
+            RegisterManager.GetDefinedCoils()
+                .Select(item => new AddressMapRow(
+                    RegisterArea.Coil,
+                    item.Key,
+                    item.Value ? (ushort)1 : (ushort)0));
+
+        IEnumerable<AddressMapRow> holdingRegisters =
+            RegisterManager.GetDefinedHoldingRegisters()
+                .Select(item => new AddressMapRow(
+                    RegisterArea.HoldingRegister,
+                    item.Key,
+                    item.Value));
+
+        _addressMapRows = coils
+            .Concat(holdingRegisters)
+            .OrderBy(row => row.Area)
+            .ThenBy(row => row.Address)
+            .ToArray();
+    }
+
     private void RefreshRegisterRows()
     {
         _registerRows = SlaveRegisterViewStore.GetRows();
@@ -585,26 +873,96 @@
         }
     }
 
-    private void UpdateHoldingRegister(ushort address, ChangeEventArgs args)
+    private void UpdateHoldingRegister(
+        ushort address,
+        ChangeEventArgs args)
     {
-        if (!ushort.TryParse(args.Value?.ToString(), out ushort value))
+        string decimalText =
+            args.Value?.ToString()?.Trim() ?? string.Empty;
+
+        if (!ushort.TryParse(
+                decimalText,
+                out ushort value))
         {
-            SetRegisterError("Holding Register değeri 0 ile 65535 arasında olmalıdır.");
+            SetRegisterError(
+                "Holding Register değeri 0 ile 65535 arasında olmalıdır.");
+
             RefreshRegisterRows();
             return;
         }
 
-        try
+        bool updated =
+            RegisterManager.TryWriteSingleHoldingRegister(
+                address,
+                value);
+
+        if (!updated)
         {
-            RegisterManager.WriteSingleHoldingRegister(address, value);
-            SetRegisterSuccess($"HR[{address}] değeri {value} olarak güncellendi.");
-        }
-        catch (Exception exception)
-        {
-            SetRegisterError($"Holding Register güncellenemedi: {exception.Message}");
+            SetRegisterError(
+                $"Holding Register {address} tanımlı değil.");
+
             RefreshRegisterRows();
+            return;
         }
+
+        SetRegisterSuccess(
+            $"HR[{address}] değeri {value} olarak güncellendi.");
+
+        RefreshRegisterRows();
     }
+
+    private void UpdateHoldingRegisterHex(
+        ushort address,
+        ChangeEventArgs args)
+    {
+        string hexText =
+            args.Value?.ToString()?.Trim() ?? string.Empty;
+
+        if (hexText.StartsWith(
+                "0x",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            hexText = hexText[2..];
+        }
+
+        bool isValidHex =
+            ushort.TryParse(
+                hexText,
+                NumberStyles.AllowHexSpecifier,
+                CultureInfo.InvariantCulture,
+                out ushort value);
+
+        if (!isValidHex)
+        {
+            SetRegisterError(
+                "Hex değer 0x0000 ile 0xFFFF arasında olmalıdır.");
+
+            RefreshRegisterRows();
+            return;
+        }
+
+        bool updated =
+            RegisterManager.TryWriteSingleHoldingRegister(
+                address,
+                value);
+
+        if (!updated)
+        {
+            SetRegisterError(
+                $"Holding Register {address} tanımlı değil.");
+
+            RefreshRegisterRows();
+            return;
+        }
+
+        SetRegisterSuccess(
+            $"HR[{address}] değeri 0x{value:X4} " +
+            $"({value}) olarak güncellendi.");
+
+        RefreshRegisterRows();
+    }
+
+
 
     private void SetRegisterSuccess(string message)
     {
@@ -616,6 +974,28 @@
     {
         _isRegisterError = true;
         _registerMessage = message;
+    }
+
+    private void SetAddressMapSuccess(string message)
+    {
+        _isAddressMapError = false;
+        _addressMapMessage = message;
+    }
+
+    private void SetAddressMapError(string message)
+    {
+        _isAddressMapError = true;
+        _addressMapMessage = message;
+    }
+
+    private void OnRegisterManagerValueChanged(
+        RegisterValueChangedEventArgs change)
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshAddressMapRows();
+            StateHasChanged();
+        });
     }
 
     private void OnSlaveRegisterViewStoreChanged()
@@ -734,6 +1114,7 @@
 
         ModbusFrameStore.DataChanged -= OnModbusFrameStoreChanged;
         SlaveRegisterViewStore.Changed -= OnSlaveRegisterViewStoreChanged;
+        RegisterManager.ValueChanged -= OnRegisterManagerValueChanged;
     }
 
     private static string GetAreaName(RegisterArea area)
@@ -750,6 +1131,28 @@
     {
         return $"{row.Area}:{row.Address}";
     }
+
+    private static string GetAddressMapRowKey(AddressMapRow row)
+    {
+        return $"map:{row.Area}:{row.Address}";
+    }
+
+    private static string GetAddressMapValueText(AddressMapRow row)
+    {
+        if (row.Area == RegisterArea.Coil)
+        {
+            return row.Value == 0
+                ? "0 / OFF"
+                : "1 / ON";
+        }
+
+        return row.Value.ToString();
+    }
+
+    private sealed record AddressMapRow(
+        RegisterArea Area,
+        ushort Address,
+        ushort Value);
 
     private enum RegisterFilter
     {

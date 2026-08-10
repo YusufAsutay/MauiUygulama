@@ -9,7 +9,7 @@ public sealed class RegisterManager : IRegisterManager
 
     private readonly object _syncRoot = new();
 
-    // Yalnızca Slave tarafından gerçekten tanımlanmış adresler tutulur.
+    // Yalnızca yerel Slave adres haritasında gerçekten tanımlanmış adresler tutulur.
     private readonly Dictionary<ushort, bool> _coils = new();
     private readonly Dictionary<ushort, bool> _discreteInputs = new();
     private readonly Dictionary<ushort, ushort> _holdingRegisters = new();

@@ -416,14 +416,12 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
 
         if ((functionCode & 0x80) != 0)
         {
-            byte exceptionCode = response.Length > 8
-                ? response[8]
-                : (byte)0;
-
-            throw new InvalidOperationException(
-                $"Slave Modbus hata cevabı gönderdi. " +
-                $"Exception Code: 0x{exceptionCode:X2} " +
-                $"({GetExceptionName(exceptionCode)}).");
+            throw CreateModbusExceptionResponseException(
+                response,
+                pending,
+                transactionId,
+                unitId,
+                functionCode);
         }
 
         if (functionCode != pending.FunctionCode)
@@ -457,6 +455,42 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
             pending.QuantityOrValue,
             BitConverter.ToString(pending.Request).Replace("-", " "),
             responseRecord);
+    }
+
+    private static ModbusExceptionResponseException
+        CreateModbusExceptionResponseException(
+            byte[] response,
+            PendingOperation pending,
+            ushort transactionId,
+            byte unitId,
+            byte exceptionFunctionCode)
+    {
+        byte expectedExceptionFunctionCode =
+            (byte)(pending.FunctionCode | 0x80);
+
+        if (exceptionFunctionCode != expectedExceptionFunctionCode)
+        {
+            throw new InvalidDataException(
+                $"Transaction ID {transactionId} için " +
+                $"0x{expectedExceptionFunctionCode:X2} exception cevabı " +
+                $"beklenirken 0x{exceptionFunctionCode:X2} alındı.");
+        }
+
+        if (response.Length != 9)
+        {
+            throw new InvalidDataException(
+                $"Modbus exception cevabı 9 byte olmalıdır; " +
+                $"{response.Length} byte alındı.");
+        }
+
+        var exceptionCode = (ModbusExceptionCode)response[8];
+
+        return new ModbusExceptionResponseException(
+            transactionId,
+            unitId,
+            pending.FunctionCode,
+            exceptionFunctionCode,
+            exceptionCode);
     }
 
     private static ModbusMasterResponseRecord ParseReadCoilsResponse(
@@ -768,18 +802,6 @@ public sealed class ModbusMasterService : IModbusMasterService, IDisposable
                 $"Başlangıç adresi ile {quantityName.ToLowerInvariant()} miktarı " +
                 "geçerli adres aralığını aşıyor.");
         }
-    }
-
-    private static string GetExceptionName(byte exceptionCode)
-    {
-        return exceptionCode switch
-        {
-            0x01 => "Illegal Function",
-            0x02 => "Illegal Data Address",
-            0x03 => "Illegal Data Value",
-            0x04 => "Server Device Failure",
-            _ => "Bilinmeyen hata"
-        };
     }
 
     private static ushort ReadUInt16BigEndian(
