@@ -24,7 +24,9 @@ public sealed class ModbusRequestProcessor :
     private readonly IModbusTcpFrameAssembler _frameAssembler;
     private readonly ITcpServerService _tcpServer;
     private readonly IRegisterManager _registerManager;
-    private readonly ISlaveRegisterViewStore _slaveRegisterViewStore;
+    private readonly ISlaveRegisterViewStore
+        _slaveRegisterViewStore;
+
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     private bool _isDisposed;
@@ -120,7 +122,15 @@ public sealed class ModbusRequestProcessor :
             return;
         }
 
-        if (!IsAddressRangeValid(startAddress, quantity))
+        /*
+         * Aralığın yalnızca sayısal olarak geçerli olması
+         * yeterli değildir. Bütün Coil adreslerinin Slave
+         * üzerinde tanımlanmış olması gerekir.
+         */
+        if (!_registerManager.TryReadCoils(
+                startAddress,
+                quantity,
+                out bool[] coilValues))
         {
             await SendExceptionResponseAsync(
                 clientId,
@@ -131,11 +141,11 @@ public sealed class ModbusRequestProcessor :
             return;
         }
 
-        bool[] coilValues = _registerManager.ReadCoils(
-            startAddress,
-            quantity);
-
-        _slaveRegisterViewStore.TrackRange(
+        /*
+         * Yalnızca başarıyla okunmuş, önceden tanımlı
+         * adresler Slave tablosuna kaydedilir.
+         */
+        _slaveRegisterViewStore.RecordSuccessfulRange(
             RegisterArea.Coil,
             startAddress,
             quantity,
@@ -182,7 +192,14 @@ public sealed class ModbusRequestProcessor :
             return;
         }
 
-        if (!IsAddressRangeValid(startAddress, quantity))
+        /*
+         * Bütün Holding Register adreslerinin Slave üzerinde
+         * gerçekten tanımlanmış olup olmadığını kontrol eder.
+         */
+        if (!_registerManager.TryReadHoldingRegisters(
+                startAddress,
+                quantity,
+                out ushort[] registerValues))
         {
             await SendExceptionResponseAsync(
                 clientId,
@@ -193,15 +210,12 @@ public sealed class ModbusRequestProcessor :
             return;
         }
 
-        ushort[] registerValues = _registerManager.ReadHoldingRegisters(
-            startAddress,
-            quantity);
-
-        _slaveRegisterViewStore.TrackRange(
+        _slaveRegisterViewStore.RecordSuccessfulRange(
             RegisterArea.HoldingRegister,
             startAddress,
             quantity,
-            functionCode: ReadHoldingRegistersFunctionCode);
+            functionCode:
+                ReadHoldingRegistersFunctionCode);
 
         byte[] response = CreateReadRegistersResponse(
             frame,
@@ -232,7 +246,13 @@ public sealed class ModbusRequestProcessor :
             return;
         }
 
-        if (!IsAddressRangeValid(address, quantity: 1))
+        /*
+         * Yalnızca önceden tanımlanmış Holding Register
+         * adresine yazılabilir. Tanımsız adres oluşturulmaz.
+         */
+        if (!_registerManager.TryWriteSingleHoldingRegister(
+                address,
+                value))
         {
             await SendExceptionResponseAsync(
                 clientId,
@@ -243,32 +263,22 @@ public sealed class ModbusRequestProcessor :
             return;
         }
 
-        _registerManager.WriteSingleHoldingRegister(
-            address,
-            value);
-
-        _slaveRegisterViewStore.TrackAddress(
+        _slaveRegisterViewStore.RecordSuccessfulAddress(
             RegisterArea.HoldingRegister,
             address,
-            functionCode: WriteSingleRegisterFunctionCode);
+            functionCode:
+                WriteSingleRegisterFunctionCode);
 
-        byte[] response = CreateWriteSingleRegisterResponse(
-            frame,
-            address,
-            value);
+        byte[] response =
+            CreateWriteSingleRegisterResponse(
+                frame,
+                address,
+                value);
 
         await SendResponseAsync(
             clientId,
             response,
             cancellationToken);
-    }
-
-    private bool IsAddressRangeValid(
-        ushort startAddress,
-        ushort quantity)
-    {
-        int endAddressExclusive = startAddress + quantity;
-        return endAddressExclusive <= _registerManager.RegisterCount;
     }
 
     private static bool TryReadAddressAndQuantity(
@@ -284,8 +294,12 @@ public sealed class ModbusRequestProcessor :
             return false;
         }
 
-        startAddress = ReadUInt16BigEndian(frame.Data, 0);
-        quantity = ReadUInt16BigEndian(frame.Data, 2);
+        startAddress =
+            ReadUInt16BigEndian(frame.Data, 0);
+
+        quantity =
+            ReadUInt16BigEndian(frame.Data, 2);
+
         return true;
     }
 
@@ -302,8 +316,12 @@ public sealed class ModbusRequestProcessor :
             return false;
         }
 
-        address = ReadUInt16BigEndian(frame.Data, 0);
-        value = ReadUInt16BigEndian(frame.Data, 2);
+        address =
+            ReadUInt16BigEndian(frame.Data, 0);
+
+        value =
+            ReadUInt16BigEndian(frame.Data, 2);
+
         return true;
     }
 
@@ -347,7 +365,8 @@ public sealed class ModbusRequestProcessor :
             catch (Exception sendException)
             {
                 Debug.WriteLine(
-                    $"Modbus hata cevabı gönderilemedi: {sendException}");
+                    "Modbus hata cevabı gönderilemedi: " +
+                    sendException);
             }
         }
     }
@@ -373,7 +392,8 @@ public sealed class ModbusRequestProcessor :
         byte[] response,
         CancellationToken cancellationToken)
     {
-        await _sendLock.WaitAsync(cancellationToken);
+        await _sendLock.WaitAsync(
+            cancellationToken);
 
         try
         {
@@ -392,19 +412,37 @@ public sealed class ModbusRequestProcessor :
         ModbusTcpFrame request,
         IReadOnlyList<ushort> registerValues)
     {
-        int registerByteCount = registerValues.Count * 2;
-        ushort length = (ushort)(3 + registerByteCount);
-        var response = new byte[9 + registerByteCount];
+        int registerByteCount =
+            registerValues.Count * 2;
 
-        WriteUInt16BigEndian(response, 0, request.TransactionId);
-        WriteUInt16BigEndian(response, 2, request.ProtocolId);
-        WriteUInt16BigEndian(response, 4, length);
+        ushort length =
+            (ushort)(3 + registerByteCount);
+
+        var response =
+            new byte[9 + registerByteCount];
+
+        WriteUInt16BigEndian(
+            response,
+            0,
+            request.TransactionId);
+
+        WriteUInt16BigEndian(
+            response,
+            2,
+            request.ProtocolId);
+
+        WriteUInt16BigEndian(
+            response,
+            4,
+            length);
 
         response[6] = request.UnitId;
         response[7] = request.FunctionCode;
         response[8] = (byte)registerByteCount;
 
-        for (int index = 0; index < registerValues.Count; index++)
+        for (int index = 0;
+             index < registerValues.Count;
+             index++)
         {
             WriteUInt16BigEndian(
                 response,
@@ -419,27 +457,48 @@ public sealed class ModbusRequestProcessor :
         ModbusTcpFrame request,
         IReadOnlyList<bool> coilValues)
     {
-        int coilByteCount = (coilValues.Count + 7) / 8;
-        ushort length = (ushort)(3 + coilByteCount);
-        var response = new byte[9 + coilByteCount];
+        int coilByteCount =
+            (coilValues.Count + 7) / 8;
 
-        WriteUInt16BigEndian(response, 0, request.TransactionId);
-        WriteUInt16BigEndian(response, 2, request.ProtocolId);
-        WriteUInt16BigEndian(response, 4, length);
+        ushort length =
+            (ushort)(3 + coilByteCount);
+
+        var response =
+            new byte[9 + coilByteCount];
+
+        WriteUInt16BigEndian(
+            response,
+            0,
+            request.TransactionId);
+
+        WriteUInt16BigEndian(
+            response,
+            2,
+            request.ProtocolId);
+
+        WriteUInt16BigEndian(
+            response,
+            4,
+            length);
 
         response[6] = request.UnitId;
         response[7] = request.FunctionCode;
         response[8] = (byte)coilByteCount;
 
-        for (int index = 0; index < coilValues.Count; index++)
+        for (int index = 0;
+             index < coilValues.Count;
+             index++)
         {
             if (!coilValues[index])
             {
                 continue;
             }
 
-            int targetByteIndex = 9 + (index / 8);
-            int targetBitIndex = index % 8;
+            int targetByteIndex =
+                9 + (index / 8);
+
+            int targetBitIndex =
+                index % 8;
 
             response[targetByteIndex] |=
                 (byte)(1 << targetBitIndex);
@@ -448,23 +507,44 @@ public sealed class ModbusRequestProcessor :
         return response;
     }
 
-    private static byte[] CreateWriteSingleRegisterResponse(
-        ModbusTcpFrame request,
-        ushort address,
-        ushort value)
+    private static byte[]
+        CreateWriteSingleRegisterResponse(
+            ModbusTcpFrame request,
+            ushort address,
+            ushort value)
     {
         const ushort length = 6;
+
         var response = new byte[12];
 
-        WriteUInt16BigEndian(response, 0, request.TransactionId);
-        WriteUInt16BigEndian(response, 2, request.ProtocolId);
-        WriteUInt16BigEndian(response, 4, length);
+        WriteUInt16BigEndian(
+            response,
+            0,
+            request.TransactionId);
+
+        WriteUInt16BigEndian(
+            response,
+            2,
+            request.ProtocolId);
+
+        WriteUInt16BigEndian(
+            response,
+            4,
+            length);
 
         response[6] = request.UnitId;
-        response[7] = WriteSingleRegisterFunctionCode;
+        response[7] =
+            WriteSingleRegisterFunctionCode;
 
-        WriteUInt16BigEndian(response, 8, address);
-        WriteUInt16BigEndian(response, 10, value);
+        WriteUInt16BigEndian(
+            response,
+            8,
+            address);
+
+        WriteUInt16BigEndian(
+            response,
+            10,
+            value);
 
         return response;
     }
@@ -474,14 +554,29 @@ public sealed class ModbusRequestProcessor :
         byte exceptionCode)
     {
         const ushort length = 3;
+
         var response = new byte[9];
 
-        WriteUInt16BigEndian(response, 0, request.TransactionId);
-        WriteUInt16BigEndian(response, 2, request.ProtocolId);
-        WriteUInt16BigEndian(response, 4, length);
+        WriteUInt16BigEndian(
+            response,
+            0,
+            request.TransactionId);
+
+        WriteUInt16BigEndian(
+            response,
+            2,
+            request.ProtocolId);
+
+        WriteUInt16BigEndian(
+            response,
+            4,
+            length);
 
         response[6] = request.UnitId;
-        response[7] = (byte)(request.FunctionCode | 0x80);
+
+        response[7] =
+            (byte)(request.FunctionCode | 0x80);
+
         response[8] = exceptionCode;
 
         return response;
@@ -501,8 +596,11 @@ public sealed class ModbusRequestProcessor :
         int index,
         ushort value)
     {
-        bytes[index] = (byte)(value >> 8);
-        bytes[index + 1] = (byte)value;
+        bytes[index] =
+            (byte)(value >> 8);
+
+        bytes[index + 1] =
+            (byte)value;
     }
 
     public void Dispose()
@@ -513,6 +611,10 @@ public sealed class ModbusRequestProcessor :
         }
 
         _isDisposed = true;
-        _frameAssembler.FrameReceived -= OnFrameReceived;
+
+        _frameAssembler.FrameReceived -=
+            OnFrameReceived;
+
+        _sendLock.Dispose();
     }
 }

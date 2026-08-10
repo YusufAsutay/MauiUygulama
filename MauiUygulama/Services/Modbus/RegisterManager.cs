@@ -5,54 +5,134 @@ namespace MauiUygulama.Services.Modbus;
 
 public sealed class RegisterManager : IRegisterManager
 {
-    // Modbus adresleri ushort olduğundan her veri alanı 0-65535
-    // arasındaki toplam 65.536 adresi destekler.
     private const int ModbusAddressCount = ushort.MaxValue + 1;
 
     private readonly object _syncRoot = new();
-    private readonly bool[] _coils = new bool[ModbusAddressCount];
-    private readonly bool[] _discreteInputs = new bool[ModbusAddressCount];
-    private readonly ushort[] _holdingRegisters = new ushort[ModbusAddressCount];
 
-    public int RegisterCount => ModbusAddressCount;
+    // Yalnızca Slave tarafından gerçekten tanımlanmış adresler tutulur.
+    private readonly Dictionary<ushort, bool> _coils = new();
+    private readonly Dictionary<ushort, bool> _discreteInputs = new();
+    private readonly Dictionary<ushort, ushort> _holdingRegisters = new();
+
+    public int RegisterCount
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return
+                    _coils.Count +
+                    _discreteInputs.Count +
+                    _holdingRegisters.Count;
+            }
+        }
+    }
 
     public event Action<RegisterValueChangedEventArgs>? ValueChanged;
 
-    public bool[] ReadCoils(
-        ushort startAddress,
-        ushort quantity)
+    public IReadOnlyDictionary<ushort, bool> GetDefinedCoils()
     {
-        return ReadRange(
+        lock (_syncRoot)
+        {
+            return new Dictionary<ushort, bool>(_coils);
+        }
+    }
+
+    public IReadOnlyDictionary<ushort, bool> GetDefinedDiscreteInputs()
+    {
+        lock (_syncRoot)
+        {
+            return new Dictionary<ushort, bool>(_discreteInputs);
+        }
+    }
+
+    public IReadOnlyDictionary<ushort, ushort>
+        GetDefinedHoldingRegisters()
+    {
+        lock (_syncRoot)
+        {
+            return new Dictionary<ushort, ushort>(
+                _holdingRegisters);
+        }
+    }
+
+    public bool DefineCoil(
+        ushort address,
+        bool initialValue)
+    {
+        return DefineValue(
+            _coils,
+            address,
+            initialValue,
+            RegisterArea.Coil,
+            initialValue ? (ushort)1 : (ushort)0);
+    }
+
+    public bool DefineDiscreteInput(
+        ushort address,
+        bool initialValue)
+    {
+        return DefineValue(
+            _discreteInputs,
+            address,
+            initialValue,
+            RegisterArea.DiscreteInput,
+            initialValue ? (ushort)1 : (ushort)0);
+    }
+
+    public bool DefineHoldingRegister(
+        ushort address,
+        ushort initialValue)
+    {
+        return DefineValue(
+            _holdingRegisters,
+            address,
+            initialValue,
+            RegisterArea.HoldingRegister,
+            initialValue);
+    }
+
+    public bool TryReadCoils(
+        ushort startAddress,
+        ushort quantity,
+        out bool[] values)
+    {
+        return TryReadRange(
             _coils,
             startAddress,
-            quantity);
+            quantity,
+            out values);
     }
 
-    public bool[] ReadDiscreteInputs(
+    public bool TryReadDiscreteInputs(
         ushort startAddress,
-        ushort quantity)
+        ushort quantity,
+        out bool[] values)
     {
-        return ReadRange(
+        return TryReadRange(
             _discreteInputs,
             startAddress,
-            quantity);
+            quantity,
+            out values);
     }
 
-    public ushort[] ReadHoldingRegisters(
+    public bool TryReadHoldingRegisters(
         ushort startAddress,
-        ushort quantity)
+        ushort quantity,
+        out ushort[] values)
     {
-        return ReadRange(
+        return TryReadRange(
             _holdingRegisters,
             startAddress,
-            quantity);
+            quantity,
+            out values);
     }
 
-    public void WriteSingleCoil(
+    public bool TryWriteSingleCoil(
         ushort address,
         bool value)
     {
-        WriteSingleValue(
+        return TryWriteSingleValue(
             _coils,
             address,
             value,
@@ -60,23 +140,11 @@ public sealed class RegisterManager : IRegisterManager
             value ? (ushort)1 : (ushort)0);
     }
 
-    public void WriteMultipleCoils(
-        ushort startAddress,
-        IReadOnlyList<bool> values)
-    {
-        WriteRange(
-            _coils,
-            startAddress,
-            values,
-            RegisterArea.Coil,
-            static value => value ? (ushort)1 : (ushort)0);
-    }
-
-    public void WriteSingleHoldingRegister(
+    public bool TryWriteSingleHoldingRegister(
         ushort address,
         ushort value)
     {
-        WriteSingleValue(
+        return TryWriteSingleValue(
             _holdingRegisters,
             address,
             value,
@@ -84,23 +152,11 @@ public sealed class RegisterManager : IRegisterManager
             value);
     }
 
-    public void WriteMultipleHoldingRegisters(
-        ushort startAddress,
-        IReadOnlyList<ushort> values)
-    {
-        WriteRange(
-            _holdingRegisters,
-            startAddress,
-            values,
-            RegisterArea.HoldingRegister,
-            static value => value);
-    }
-
-    public void SetDiscreteInput(
+    public bool TrySetDiscreteInput(
         ushort address,
         bool value)
     {
-        WriteSingleValue(
+        return TryWriteSingleValue(
             _discreteInputs,
             address,
             value,
@@ -108,8 +164,12 @@ public sealed class RegisterManager : IRegisterManager
             value ? (ushort)1 : (ushort)0);
     }
 
-    private T[] ReadRange<T>(
-        T[] source,
+    /*
+     * Aşağıdaki metotlar eski çağrı noktalarının bu aşamada
+     * bozulmaması için geçici olarak korunuyor.
+     */
+
+    public bool[] ReadCoils(
         ushort startAddress,
         ushort quantity)
     {
@@ -118,23 +178,227 @@ public sealed class RegisterManager : IRegisterManager
             quantity,
             nameof(quantity));
 
+        if (TryReadCoils(
+                startAddress,
+                quantity,
+                out bool[] values))
+        {
+            return values;
+        }
+
+        throw CreateUndefinedAddressException(
+            RegisterArea.Coil,
+            startAddress,
+            quantity);
+    }
+
+    public bool[] ReadDiscreteInputs(
+        ushort startAddress,
+        ushort quantity)
+    {
+        ValidateRange(
+            startAddress,
+            quantity,
+            nameof(quantity));
+
+        if (TryReadDiscreteInputs(
+                startAddress,
+                quantity,
+                out bool[] values))
+        {
+            return values;
+        }
+
+        throw CreateUndefinedAddressException(
+            RegisterArea.DiscreteInput,
+            startAddress,
+            quantity);
+    }
+
+    public ushort[] ReadHoldingRegisters(
+        ushort startAddress,
+        ushort quantity)
+    {
+        ValidateRange(
+            startAddress,
+            quantity,
+            nameof(quantity));
+
+        if (TryReadHoldingRegisters(
+                startAddress,
+                quantity,
+                out ushort[] values))
+        {
+            return values;
+        }
+
+        throw CreateUndefinedAddressException(
+            RegisterArea.HoldingRegister,
+            startAddress,
+            quantity);
+    }
+
+    public void WriteSingleCoil(
+        ushort address,
+        bool value)
+    {
+        if (!TryWriteSingleCoil(address, value))
+        {
+            throw CreateUndefinedAddressException(
+                RegisterArea.Coil,
+                address,
+                quantity: 1);
+        }
+    }
+
+    public void WriteMultipleCoils(
+        ushort startAddress,
+        IReadOnlyList<bool> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        ValidateRange(
+            startAddress,
+            values.Count,
+            nameof(values));
+
+        if (!TryWriteRange(
+                _coils,
+                startAddress,
+                values,
+                RegisterArea.Coil,
+                static value =>
+                    value ? (ushort)1 : (ushort)0))
+        {
+            throw CreateUndefinedAddressException(
+                RegisterArea.Coil,
+                startAddress,
+                values.Count);
+        }
+    }
+
+    public void WriteSingleHoldingRegister(
+        ushort address,
+        ushort value)
+    {
+        if (!TryWriteSingleHoldingRegister(address, value))
+        {
+            throw CreateUndefinedAddressException(
+                RegisterArea.HoldingRegister,
+                address,
+                quantity: 1);
+        }
+    }
+
+    public void WriteMultipleHoldingRegisters(
+        ushort startAddress,
+        IReadOnlyList<ushort> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        ValidateRange(
+            startAddress,
+            values.Count,
+            nameof(values));
+
+        if (!TryWriteRange(
+                _holdingRegisters,
+                startAddress,
+                values,
+                RegisterArea.HoldingRegister,
+                static value => value))
+        {
+            throw CreateUndefinedAddressException(
+                RegisterArea.HoldingRegister,
+                startAddress,
+                values.Count);
+        }
+    }
+
+    public void SetDiscreteInput(
+        ushort address,
+        bool value)
+    {
+        if (!TrySetDiscreteInput(address, value))
+        {
+            throw CreateUndefinedAddressException(
+                RegisterArea.DiscreteInput,
+                address,
+                quantity: 1);
+        }
+    }
+
+    private bool DefineValue<T>(
+        Dictionary<ushort, T> target,
+        ushort address,
+        T initialValue,
+        RegisterArea area,
+        ushort eventValue)
+    {
+        bool added;
+
+        lock (_syncRoot)
+        {
+            if (target.ContainsKey(address))
+            {
+                return false;
+            }
+
+            target.Add(address, initialValue);
+            added = true;
+        }
+
+        if (added)
+        {
+            ValueChanged?.Invoke(
+                new RegisterValueChangedEventArgs(
+                    area,
+                    address,
+                    eventValue));
+        }
+
+        return true;
+    }
+
+    private bool TryReadRange<T>(
+        Dictionary<ushort, T> source,
+        ushort startAddress,
+        ushort quantity,
+        out T[] values)
+    {
+        values = Array.Empty<T>();
+
+        if (!IsValidRange(startAddress, quantity))
+        {
+            return false;
+        }
+
         var result = new T[quantity];
 
         lock (_syncRoot)
         {
-            Array.Copy(
-                source,
-                startAddress,
-                result,
-                0,
-                quantity);
+            for (int index = 0; index < quantity; index++)
+            {
+                ushort address =
+                    (ushort)(startAddress + index);
+
+                if (!source.TryGetValue(
+                        address,
+                        out T? currentValue))
+                {
+                    return false;
+                }
+
+                result[index] = currentValue;
+            }
         }
 
-        return result;
+        values = result;
+        return true;
     }
 
-    private void WriteSingleValue<T>(
-        T[] target,
+    private bool TryWriteSingleValue<T>(
+        Dictionary<ushort, T> target,
         ushort address,
         T value,
         RegisterArea area,
@@ -144,11 +408,22 @@ public sealed class RegisterManager : IRegisterManager
 
         lock (_syncRoot)
         {
-            changed = !EqualityComparer<T>.Default.Equals(
-                target[address],
-                value);
+            if (!target.TryGetValue(
+                    address,
+                    out T? currentValue))
+            {
+                return false;
+            }
 
-            target[address] = value;
+            changed =
+                !EqualityComparer<T>.Default.Equals(
+                    currentValue,
+                    value);
+
+            if (changed)
+            {
+                target[address] = value;
+            }
         }
 
         if (changed)
@@ -159,10 +434,12 @@ public sealed class RegisterManager : IRegisterManager
                     address,
                     eventValue));
         }
+
+        return true;
     }
 
-    private void WriteRange<T>(
-        T[] target,
+    private bool TryWriteRange<T>(
+        Dictionary<ushort, T> target,
         ushort startAddress,
         IReadOnlyList<T> values,
         RegisterArea area,
@@ -170,40 +447,50 @@ public sealed class RegisterManager : IRegisterManager
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        if (values.Count == 0)
+        if (!IsValidRange(startAddress, values.Count))
         {
-            throw new ArgumentException(
-                "En az bir değer yazılmalıdır.",
-                nameof(values));
+            return false;
         }
 
-        ValidateRange(
-            startAddress,
-            values.Count,
-            nameof(values));
-
-        var changes = new List<RegisterValueChangedEventArgs>();
+        var changes =
+            new List<RegisterValueChangedEventArgs>();
 
         lock (_syncRoot)
         {
+            // Önce bütün adresler kontrol edilir.
+            // Tek bir adres bile yoksa hiçbir değer değiştirilmez.
             for (int index = 0; index < values.Count; index++)
             {
-                int targetAddress = startAddress + index;
+                ushort address =
+                    (ushort)(startAddress + index);
+
+                if (!target.ContainsKey(address))
+                {
+                    return false;
+                }
+            }
+
+            for (int index = 0; index < values.Count; index++)
+            {
+                ushort address =
+                    (ushort)(startAddress + index);
+
                 T newValue = values[index];
+                T currentValue = target[address];
 
                 if (EqualityComparer<T>.Default.Equals(
-                        target[targetAddress],
+                        currentValue,
                         newValue))
                 {
                     continue;
                 }
 
-                target[targetAddress] = newValue;
+                target[address] = newValue;
 
                 changes.Add(
                     new RegisterValueChangedEventArgs(
                         area,
-                        (ushort)targetAddress,
+                        address,
                         eventValueSelector(newValue)));
             }
         }
@@ -212,6 +499,23 @@ public sealed class RegisterManager : IRegisterManager
         {
             ValueChanged?.Invoke(change);
         }
+
+        return true;
+    }
+
+    private static bool IsValidRange(
+        ushort startAddress,
+        int quantity)
+    {
+        if (quantity <= 0)
+        {
+            return false;
+        }
+
+        int endAddressExclusive =
+            startAddress + quantity;
+
+        return endAddressExclusive <= ModbusAddressCount;
     }
 
     private static void ValidateRange(
@@ -226,7 +530,8 @@ public sealed class RegisterManager : IRegisterManager
                 "Miktar sıfırdan büyük olmalıdır.");
         }
 
-        int endAddressExclusive = startAddress + quantity;
+        int endAddressExclusive =
+            startAddress + quantity;
 
         if (endAddressExclusive > ModbusAddressCount)
         {
@@ -236,4 +541,17 @@ public sealed class RegisterManager : IRegisterManager
         }
     }
 
+    private static KeyNotFoundException
+        CreateUndefinedAddressException(
+            RegisterArea area,
+            ushort startAddress,
+            int quantity)
+    {
+        int endAddress =
+            startAddress + quantity - 1;
+
+        return new KeyNotFoundException(
+            $"{area} alanındaki {startAddress}-{endAddress} " +
+            "adres aralığının tamamı Slave üzerinde tanımlı değil.");
+    }
 }
