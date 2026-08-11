@@ -1,17 +1,58 @@
 ﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
+<div class="app-shell @(_sidebarCollapsed ? "sidebar-collapsed" : null)">
+    <aside class="app-sidebar" aria-label="Uygulama menüsü">
+        <NavMenu IsCollapsed="@_sidebarCollapsed"
+                 CollapsedChanged="HandleSidebarCollapsedChanged" />
+    </aside>
+
+    <div class="app-workspace">
+        <header class="app-topbar">
+            <div class="topbar-heading">
+                <span class="topbar-eyebrow">ÇALIŞMA ALANI</span>
+                <strong>@CurrentSection</strong>
+            </div>
+
+            <div class="topbar-meta" aria-label="Uygulama durumu">
+                <span class="topbar-protocol">MODBUS TCP</span>
+                <span class="topbar-ready">
+                    <span class="topbar-ready-dot" aria-hidden="true"></span>
+                    Arayüz hazır
+                </span>
+            </div>
+        </header>
+
+        <main class="app-main">
+            <article class="app-content">
+                @Body
+            </article>
+        </main>
     </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
 </div>
+
+@code {
+    private bool _sidebarCollapsed;
+
+    private string CurrentSection
+    {
+        get
+        {
+            string relativePath = Navigation.ToBaseRelativePath(Navigation.Uri)
+                .Trim('/')
+                .ToLowerInvariant();
+
+            return relativePath switch
+            {
+                "master" => "Master",
+                "slave" => "Slave",
+                _ => "Mod Seçimi"
+            };
+        }
+    }
+
+    private void HandleSidebarCollapsedChanged(bool isCollapsed)
+    {
+        _sidebarCollapsed = isCollapsed;
+    }
+}

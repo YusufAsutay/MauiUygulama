@@ -1,49 +1,97 @@
-﻿<div class="top-row navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/">Modbus Studio</a>
+﻿<div class="nav-menu @(IsCollapsed ? "is-collapsed" : null)">
+    <div class="brand-row">
+        <a class="brand-link" href="/" aria-label="Modbus Studio ana sayfa">
+            <span class="brand-mark" aria-hidden="true">MB</span>
+            <span class="brand-copy">
+                <strong>Modbus Studio</strong>
+                <small>TCP test ortamı</small>
+            </span>
+        </a>
 
         <button type="button"
-                class="navbar-toggler"
+                class="mobile-menu-button"
                 title="Menüyü aç veya kapat"
                 aria-label="Menüyü aç veya kapat"
-                @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
+                aria-expanded="@(!_mobileMenuCollapsed)"
+                @onclick="ToggleMobileMenu">
+            <span aria-hidden="true">☰</span>
         </button>
     </div>
-</div>
 
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="flex-column" aria-label="Ana menü">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">
-                <span class="menu-mark" aria-hidden="true">M</span>
-                Mod Seçimi
-            </NavLink>
-        </div>
+    <div class="@MobileMenuCssClass nav-panel">
+        <nav aria-label="Ana menü">
+            <span class="nav-section-label">GENEL</span>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/master">
-                <span class="menu-mark" aria-hidden="true">A</span>
-                Master
+            <NavLink class="nav-link" href="/" Match="NavLinkMatch.All" @onclick="CloseMobileMenu">
+                <span class="nav-icon" aria-hidden="true">01</span>
+                <span class="nav-label">Mod Seçimi</span>
             </NavLink>
-        </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="/slave">
-                <span class="menu-mark" aria-hidden="true">S</span>
-                Slave
+            <span class="nav-section-label">ÇALIŞMA MODLARI</span>
+
+            <NavLink class="nav-link" href="/master" @onclick="CloseMobileMenu">
+                <span class="nav-icon" aria-hidden="true">M</span>
+                <span class="nav-label">Master</span>
             </NavLink>
+
+            <NavLink class="nav-link" href="/slave" @onclick="CloseMobileMenu">
+                <span class="nav-icon" aria-hidden="true">S</span>
+                <span class="nav-label">Slave</span>
+            </NavLink>
+            <span class="nav-section-label">İZLEME</span>
+
+            <NavLink class="nav-link"
+                     href="/traffic-logs"
+                     @onclick="CloseMobileMenu">
+                <span class="nav-icon" aria-hidden="true">TL</span>
+                <span class="nav-label">Trafik ve Loglar</span>
+            </NavLink>
+
+
+        </nav>
+
+        <div class="sidebar-footer">
+            <span class="sidebar-footer-dot" aria-hidden="true"></span>
+            <span class="sidebar-footer-copy">
+                <strong>Modbus TCP</strong>
+                <small>FC01 · FC03 · FC06</small>
+            </span>
         </div>
-    </nav>
+    </div>
+
+    <button type="button"
+            class="desktop-collapse-button"
+            title="@(IsCollapsed ? "Menüyü genişlet" : "Menüyü daralt")"
+            aria-label="@(IsCollapsed ? "Menüyü genişlet" : "Menüyü daralt")"
+            @onclick="ToggleDesktopSidebar">
+        <span aria-hidden="true">@(IsCollapsed ? "›" : "‹")</span>
+    </button>
 </div>
 
 @code {
-    private bool collapseNavMenu = true;
+    [Parameter]
+    public bool IsCollapsed { get; set; }
 
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+    [Parameter]
+    public EventCallback<bool> CollapsedChanged { get; set; }
 
-    private void ToggleNavMenu()
+    private bool _mobileMenuCollapsed = true;
+
+    private string MobileMenuCssClass =>
+        _mobileMenuCollapsed ? "mobile-collapsed" : "mobile-expanded";
+
+    private void ToggleMobileMenu()
     {
-        collapseNavMenu = !collapseNavMenu;
+        _mobileMenuCollapsed = !_mobileMenuCollapsed;
+    }
+
+    private void CloseMobileMenu()
+    {
+        _mobileMenuCollapsed = true;
+    }
+
+    private Task ToggleDesktopSidebar()
+    {
+        return CollapsedChanged.InvokeAsync(!IsCollapsed);
     }
 }

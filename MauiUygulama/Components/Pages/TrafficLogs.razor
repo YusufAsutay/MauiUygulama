@@ -1,0 +1,482 @@
+﻿@page "/traffic-logs"
+
+@using MauiUygulama.Core.Interfaces
+@using MauiUygulama.Models
+
+@implements IDisposable
+
+@inject IModbusFrameStore ModbusFrameStore
+@inject IModbusMasterResponseStore ResponseStore
+@inject IModbusPollingService Polling
+
+<PageTitle>Trafik ve Loglar</PageTitle>
+
+<div class="container-fluid modbus-page px-3 px-lg-4 py-4">
+    <div class="page-hero d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <span class="page-eyebrow">TEKNİK İZLEME</span>
+            <h1 class="mb-1 traffic-page-title">Trafik ve Loglar</h1>
+            <p class="mb-0">
+                Master ve Slave Modbus TCP trafiğini tek ekranda inceleyin.
+            </p>
+        </div>
+
+        <button type="button"
+                class="btn btn-light hero-back-button"
+                @onclick="ClearTraffic"
+                disabled="@(TrafficRows.Count == 0)">
+            Trafik Kayıtlarını Temizle
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert alert-success mt-4 mb-0" role="status">
+            @_message
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(ModbusFrameStore.LastError) ||
+         !string.IsNullOrWhiteSpace(Polling.Status.LastError))
+    {
+        <div class="alert alert-danger mt-4 mb-0" role="alert">
+            <strong>Son hata:</strong>
+            @(Polling.Status.LastError ?? ModbusFrameStore.LastError)
+        </div>
+    }
+
+    <div class="row g-3 mt-1">
+        <div class="col-md-4">
+            <div class="card surface-card h-100">
+                <div class="card-body">
+                    <span class="section-eyebrow">TOPLAM</span>
+                    <h2 class="mb-1">@TrafficRows.Count</h2>
+                    <span class="text-muted">görüntülenebilir çerçeve</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card surface-card h-100">
+                <div class="card-body">
+                    <span class="section-eyebrow">MASTER</span>
+                    <h2 class="mb-1">@MasterTrafficCount</h2>
+                    <span class="text-muted">giden istek ve alınan cevap</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card surface-card h-100">
+                <div class="card-body">
+                    <span class="section-eyebrow">SLAVE</span>
+                    <h2 class="mb-1">@SlaveTrafficCount</h2>
+                    <span class="text-muted">alınan Modbus isteği</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card surface-card mt-4">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    <span class="section-eyebrow">TCP / MODBUS</span>
+                    <h2 class="mb-0">Çerçeve Geçmişi</h2>
+                </div>
+                <span class="count-badge">@VisibleRows.Count kayıt gösteriliyor</span>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <div class="row g-3 align-items-end mb-3 filter-toolbar">
+                <div class="col-lg-3 col-md-6">
+                    <label for="trafficSource" class="form-label">Kaynak</label>
+                    <select id="trafficSource" class="form-select" @bind="_sourceFilter">
+                        <option value="@TrafficSourceFilter.All">Tümü</option>
+                        <option value="@TrafficSourceFilter.Master">Master</option>
+                        <option value="@TrafficSourceFilter.Slave">Slave</option>
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-6">
+                    <label for="trafficDirection" class="form-label">Yön</label>
+                    <select id="trafficDirection" class="form-select" @bind="_directionFilter">
+                        <option value="@TrafficDirectionFilter.All">Tümü</option>
+                        <option value="@TrafficDirectionFilter.Sent">Gönderildi</option>
+                        <option value="@TrafficDirectionFilter.Received">Alındı</option>
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-6">
+                    <label for="trafficFunction" class="form-label">Fonksiyon</label>
+                    <select id="trafficFunction" class="form-select" @bind="_functionFilter">
+                        <option value="0">Tümü</option>
+                        <option value="1">FC01 — Read Coils</option>
+                        <option value="3">FC03 — Read Holding Registers</option>
+                        <option value="6">FC06 — Write Single Register</option>
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-6">
+                    <button type="button"
+                            class="btn btn-outline-secondary w-100"
+                            @onclick="ResetFilters"
+                            disabled="@FiltersAreDefault">
+                        Filtreleri Sıfırla
+                    </button>
+                </div>
+            </div>
+
+            @if (TrafficRows.Count == 0)
+            {
+                <div class="alert alert-secondary mb-0">
+                    Henüz kaydedilmiş bir Modbus TCP trafiği bulunmuyor.
+                </div>
+            }
+            else if (VisibleRows.Count == 0)
+            {
+                <div class="alert alert-secondary mb-0">
+                    Seçilen filtrelere uyan trafik kaydı bulunamadı.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive border rounded">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Zaman</th>
+                                <th>Kaynak</th>
+                                <th>Yön</th>
+                                <th>Fonksiyon</th>
+                                <th>Unit ID</th>
+                                <th>Adres</th>
+                                <th>Miktar / Değer</th>
+                                <th>Durum</th>
+                                <th>Ayrıntı</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (TrafficRow row in VisibleRows)
+                            {
+                                <tr @key="row.Key">
+                                    <td>@row.Timestamp.ToString("HH:mm:ss.fff")</td>
+                                    <td><span class="protocol-badge">@row.Source</span></td>
+                                    <td>@row.Direction</td>
+                                    <td>
+                                        <span class="function-badge">
+                                            FC@(row.FunctionCode.ToString("D2"))
+                                        </span>
+                                    </td>
+                                    <td>@row.UnitId</td>
+                                    <td>@row.AddressText</td>
+                                    <td>@row.QuantityOrValueText</td>
+                                    <td>
+                                        <span class="badge @row.StatusCssClass">@row.Status</span>
+                                    </td>
+                                    <td style="min-width: 150px;">
+                                        <details class="advanced-settings">
+                                            <summary>Görüntüle</summary>
+                                            <div class="advanced-settings-body d-block">
+                                                <div class="small text-muted mb-2">
+                                                    Transaction ID: @row.TransactionId<br />
+                                                    @row.Description
+                                                </div>
+                                                <div class="border rounded bg-dark text-light p-2 font-monospace small"
+                                                     style="word-break: break-all;">
+                                                    @row.RawHex
+                                                </div>
+                                            </div>
+                                        </details>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private TrafficSourceFilter _sourceFilter = TrafficSourceFilter.All;
+    private TrafficDirectionFilter _directionFilter = TrafficDirectionFilter.All;
+    private byte _functionFilter;
+    private string? _message;
+
+    private IReadOnlyList<TrafficRow> TrafficRows => BuildTrafficRows();
+
+    private IReadOnlyList<TrafficRow> VisibleRows
+    {
+        get
+        {
+            IEnumerable<TrafficRow> rows = TrafficRows;
+
+            if (_sourceFilter != TrafficSourceFilter.All)
+            {
+                rows = rows.Where(row => row.Source == _sourceFilter.ToString());
+            }
+
+            if (_directionFilter != TrafficDirectionFilter.All)
+            {
+                string direction = _directionFilter == TrafficDirectionFilter.Sent
+                    ? "Gönderildi"
+                    : "Alındı";
+
+                rows = rows.Where(row => row.Direction == direction);
+            }
+
+            if (_functionFilter != 0)
+            {
+                rows = rows.Where(row => row.FunctionCode == _functionFilter);
+            }
+
+            return rows.ToArray();
+        }
+    }
+
+    private int MasterTrafficCount =>
+        TrafficRows.Count(row => row.Source == "Master");
+
+    private int SlaveTrafficCount =>
+        TrafficRows.Count(row => row.Source == "Slave");
+
+    private bool FiltersAreDefault =>
+        _sourceFilter == TrafficSourceFilter.All &&
+        _directionFilter == TrafficDirectionFilter.All &&
+        _functionFilter == 0;
+
+    protected override void OnInitialized()
+    {
+        ModbusFrameStore.DataChanged += OnTrafficChanged;
+        ResponseStore.DataChanged += OnTrafficChanged;
+        Polling.StatusChanged += OnTrafficChanged;
+    }
+
+    private IReadOnlyList<TrafficRow> BuildTrafficRows()
+    {
+        var rows = new List<TrafficRow>();
+
+        foreach (ModbusMasterResponseRecord response in ResponseStore.Items)
+        {
+            ushort quantityOrValue = GetMasterQuantityOrValue(response);
+            ushort address = response.StartAddress ?? 0;
+
+            rows.Add(new TrafficRow(
+                Key: $"master-sent-{response.TransactionId}-{response.ReceivedAt.Ticks}",
+                Timestamp: response.ReceivedAt.AddTicks(-1),
+                Source: "Master",
+                Direction: "Gönderildi",
+                TransactionId: response.TransactionId,
+                UnitId: response.UnitId,
+                FunctionCode: response.FunctionCode,
+                AddressText: address.ToString(),
+                QuantityOrValueText: quantityOrValue.ToString(),
+                Status: "Gönderildi",
+                StatusCssClass: "bg-primary",
+                Description: GetFunctionName(response.FunctionCode),
+                RawHex: BuildMasterRequestHex(response, quantityOrValue)));
+
+            rows.Add(new TrafficRow(
+                Key: $"master-received-{response.TransactionId}-{response.ReceivedAt.Ticks}",
+                Timestamp: response.ReceivedAt,
+                Source: "Master",
+                Direction: "Alındı",
+                TransactionId: response.TransactionId,
+                UnitId: response.UnitId,
+                FunctionCode: response.FunctionCode,
+                AddressText: address.ToString(),
+                QuantityOrValueText: GetMasterResponseValueText(response),
+                Status: "Başarılı",
+                StatusCssClass: "bg-success",
+                Description: $"{GetFunctionName(response.FunctionCode)} cevabı",
+                RawHex: response.Hex));
+        }
+
+        foreach (ModbusFrameRecord frame in ModbusFrameStore.Items)
+        {
+            rows.Add(new TrafficRow(
+                Key: $"slave-received-{frame.ClientId}-{frame.Frame.TransactionId}-{frame.ReceivedAt.Ticks}",
+                Timestamp: frame.ReceivedAt,
+                Source: "Slave",
+                Direction: "Alındı",
+                TransactionId: frame.Frame.TransactionId,
+                UnitId: frame.Frame.UnitId,
+                FunctionCode: frame.Frame.FunctionCode,
+                AddressText: GetFrameAddress(frame),
+                QuantityOrValueText: GetFrameQuantityOrValue(frame),
+                Status: "Alındı",
+                StatusCssClass: "bg-info text-dark",
+                Description: $"Master {frame.ClientId.ToString()[..8]} — {GetFunctionName(frame.Frame.FunctionCode)}",
+                RawHex: BuildSlaveRequestHex(frame)));
+        }
+
+        return rows
+            .OrderByDescending(row => row.Timestamp)
+            .ToArray();
+    }
+
+    private static ushort GetMasterQuantityOrValue(
+        ModbusMasterResponseRecord response)
+    {
+        if (response.FunctionCode == 0x06)
+        {
+            return response.RegisterValues.FirstOrDefault();
+        }
+
+        return (ushort)response.RegisterValues.Length;
+    }
+
+    private static string GetMasterResponseValueText(
+        ModbusMasterResponseRecord response)
+    {
+        if (response.FunctionCode == 0x06)
+        {
+            return response.RegisterValues.FirstOrDefault().ToString();
+        }
+
+        return $"{response.RegisterValues.Length} değer";
+    }
+
+    private static string BuildMasterRequestHex(
+        ModbusMasterResponseRecord response,
+        ushort quantityOrValue)
+    {
+        byte[] request = new byte[12];
+
+        WriteUInt16(request, 0, response.TransactionId);
+        WriteUInt16(request, 2, 0);
+        WriteUInt16(request, 4, 6);
+        request[6] = response.UnitId;
+        request[7] = response.FunctionCode;
+        WriteUInt16(request, 8, response.StartAddress ?? 0);
+        WriteUInt16(request, 10, quantityOrValue);
+
+        return BitConverter.ToString(request).Replace("-", " ");
+    }
+
+    private static string BuildSlaveRequestHex(ModbusFrameRecord record)
+    {
+        byte[] data = record.Frame.Data;
+        byte[] request = new byte[8 + data.Length];
+
+        WriteUInt16(request, 0, record.Frame.TransactionId);
+        WriteUInt16(request, 2, 0);
+        WriteUInt16(request, 4, (ushort)(data.Length + 2));
+        request[6] = record.Frame.UnitId;
+        request[7] = record.Frame.FunctionCode;
+        data.CopyTo(request, 8);
+
+        return BitConverter.ToString(request).Replace("-", " ");
+    }
+
+    private static string GetFrameAddress(ModbusFrameRecord record)
+    {
+        return TryReadUInt16(record.Frame.Data, 0, out ushort address)
+            ? address.ToString()
+            : "—";
+    }
+
+    private static string GetFrameQuantityOrValue(ModbusFrameRecord record)
+    {
+        return TryReadUInt16(record.Frame.Data, 2, out ushort value)
+            ? value.ToString()
+            : "—";
+    }
+
+    private static bool TryReadUInt16(
+        byte[] data,
+        int index,
+        out ushort value)
+    {
+        if (data.Length < index + 2)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = (ushort)((data[index] << 8) | data[index + 1]);
+        return true;
+    }
+
+    private static void WriteUInt16(
+        byte[] bytes,
+        int index,
+        ushort value)
+    {
+        bytes[index] = (byte)(value >> 8);
+        bytes[index + 1] = (byte)value;
+    }
+
+    private static string GetFunctionName(byte functionCode)
+    {
+        return functionCode switch
+        {
+            0x01 => "Read Coils",
+            0x03 => "Read Holding Registers",
+            0x06 => "Write Single Holding Register",
+            _ => "Bilinmeyen fonksiyon"
+        };
+    }
+
+    private void ClearTraffic()
+    {
+        int count = TrafficRows.Count;
+
+        ModbusFrameStore.Clear();
+        ResponseStore.Clear();
+        _message = $"{count} trafik kaydı temizlendi. Register değerleri korunuyor.";
+    }
+
+    private void ResetFilters()
+    {
+        _sourceFilter = TrafficSourceFilter.All;
+        _directionFilter = TrafficDirectionFilter.All;
+        _functionFilter = 0;
+    }
+
+    private void OnTrafficChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _message = null;
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        ModbusFrameStore.DataChanged -= OnTrafficChanged;
+        ResponseStore.DataChanged -= OnTrafficChanged;
+        Polling.StatusChanged -= OnTrafficChanged;
+    }
+
+    private sealed record TrafficRow(
+        string Key,
+        DateTime Timestamp,
+        string Source,
+        string Direction,
+        ushort TransactionId,
+        byte UnitId,
+        byte FunctionCode,
+        string AddressText,
+        string QuantityOrValueText,
+        string Status,
+        string StatusCssClass,
+        string Description,
+        string RawHex);
+
+    private enum TrafficSourceFilter
+    {
+        All,
+        Master,
+        Slave
+    }
+
+    private enum TrafficDirectionFilter
+    {
+        All,
+        Sent,
+        Received
+    }
+}

@@ -1,4 +1,4 @@
-﻿@* Merkezî Slave ekranı — adres haritası yapılandırması, filtreleme ve güvenli temizleme *@
+﻿@* Merkezî Slave ekranı — Canlı Veri ve Adres Haritası çalışma alanları *@
 @page "/slave"
 
 @using System.Globalization
@@ -109,460 +109,494 @@
         </div>
     </div>
 
-    <div class="card surface-card address-map-card mt-4">
-        <div class="card-header bg-white py-3">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div>
-                    <span class="section-eyebrow">YEREL SLAVE YAPILANDIRMASI</span>
-                    <h2 class="mb-1">Slave Adres Haritası Yapılandırması</h2>
-                    <small class="text-muted">
-                        Master isteği oluşturmadan önce Slave üzerinde bulunacak adresleri tanımlayın.
-                    </small>
-                </div>
+    <div class="workspace-tabs"
+         role="tablist"
+         aria-label="Slave çalışma türü">
+        <button type="button"
+                class="@GetTabCssClass(SlaveViewTab.LiveData)"
+                role="tab"
+                aria-selected="@(_activeTab == SlaveViewTab.LiveData)"
+                @onclick="() => SelectTab(SlaveViewTab.LiveData)">
+            Canlı Veri
+            @if (_registerRows.Count > 0)
+            {
+                <span class="count-badge">@_registerRows.Count</span>
+            }
+        </button>
 
-                <div class="d-flex flex-wrap align-items-center gap-2">
-                    <span class="count-badge">
-                        @_addressMapRows.Count tanımlı adres
-                    </span>
-                    <span class="connection-pill @(TcpServer.IsRunning ? "is-offline" : "is-online")">
-                        <span class="status-dot"></span>
-                        @(TcpServer.IsRunning ? "Harita kilitli" : "Harita düzenlenebilir")
-                    </span>
+        <button type="button"
+                class="@GetTabCssClass(SlaveViewTab.AddressMap)"
+                role="tab"
+                aria-selected="@(_activeTab == SlaveViewTab.AddressMap)"
+                @onclick="() => SelectTab(SlaveViewTab.AddressMap)">
+            Adres Haritası
+            @if (_addressMapRows.Count > 0)
+            {
+                <span class="count-badge">@_addressMapRows.Count</span>
+            }
+        </button>
+    </div>
+
+    @if (_activeTab == SlaveViewTab.AddressMap)
+    {
+        <div class="card surface-card address-map-card mt-4">
+            <div class="card-header bg-white py-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="section-eyebrow">YEREL SLAVE YAPILANDIRMASI</span>
+                        <h2 class="mb-1">Slave Adres Haritası Yapılandırması</h2>
+                        <small class="text-muted">
+                            Master isteği oluşturmadan önce Slave üzerinde bulunacak adresleri tanımlayın.
+                        </small>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="count-badge">
+                            @_addressMapRows.Count tanımlı adres
+                        </span>
+                        <span class="connection-pill @(TcpServer.IsRunning ? "is-offline" : "is-online")">
+                            <span class="status-dot"></span>
+                            @(TcpServer.IsRunning ? "Harita kilitli" : "Harita düzenlenebilir")
+                        </span>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div class="card-body">
-            @if (TcpServer.IsRunning)
-            {
-                <div class="alert alert-info py-2" role="alert">
-                    Adres haritasını değiştirmek için önce Slave sunucusunu durdurun.
-                    Sunucu çalışırken Master yalnızca önceden tanımlanmış adreslere erişebilir.
-                </div>
-            }
+            <div class="card-body">
+                @if (TcpServer.IsRunning)
+                {
+                    <div class="alert alert-info py-2" role="alert">
+                        Adres haritasını değiştirmek için önce Slave sunucusunu durdurun.
+                        Sunucu çalışırken Master yalnızca önceden tanımlanmış adreslere erişebilir.
+                    </div>
+                }
 
-            <div class="row g-3 align-items-end">
-                <div class="col-lg-3 col-md-6">
-                    <label for="newRegisterArea" class="form-label">
-                        Register Türü
-                    </label>
-                    <select id="newRegisterArea"
-                            class="form-select"
-                            @bind="_newRegisterArea"
-                            disabled="@IsAddressMapLocked">
-                        <option value="@RegisterArea.Coil">Coil</option>
-                        <option value="@RegisterArea.HoldingRegister">
-                            Holding Register
-                        </option>
-                    </select>
-                </div>
-
-                <div class="col-lg-3 col-md-6">
-                    <label for="newRegisterAddress" class="form-label">
-                        Adres
-                    </label>
-                    <input id="newRegisterAddress"
-                           class="form-control"
-                           type="number"
-                           min="0"
-                           max="65535"
-                           @bind="_newAddressText"
-                           disabled="@IsAddressMapLocked" />
-                </div>
-
-                <div class="col-lg-3 col-md-6">
-                    @if (_newRegisterArea == RegisterArea.Coil)
-                    {
-                        <label class="form-label d-block">
-                            Başlangıç Değeri
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-3 col-md-6">
+                        <label for="newRegisterArea" class="form-label">
+                            Register Türü
                         </label>
-                        <div class="form-check form-switch address-map-switch">
-                            <input id="newCoilInitialValue"
-                                   class="form-check-input"
-                                   type="checkbox"
-                                   role="switch"
-                                   @bind="_newCoilInitialValue"
-                                   disabled="@IsAddressMapLocked" />
-                            <label class="form-check-label" for="newCoilInitialValue">
-                                @(_newCoilInitialValue ? "1 / ON" : "0 / OFF")
-                            </label>
-                        </div>
-                    }
-                    else
-                    {
-                        <label for="newHoldingInitialValue" class="form-label">
-                            Başlangıç Değeri
+                        <select id="newRegisterArea"
+                                class="form-select"
+                                @bind="_newRegisterArea"
+                                disabled="@IsAddressMapLocked">
+                            <option value="@RegisterArea.Coil">Coil</option>
+                            <option value="@RegisterArea.HoldingRegister">
+                                Holding Register
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="col-lg-3 col-md-6">
+                        <label for="newRegisterAddress" class="form-label">
+                            Adres
                         </label>
-                        <input id="newHoldingInitialValue"
+                        <input id="newRegisterAddress"
                                class="form-control"
                                type="number"
                                min="0"
                                max="65535"
-                               @bind="_newHoldingInitialValueText"
+                               @bind="_newAddressText"
                                disabled="@IsAddressMapLocked" />
-                    }
-                </div>
+                    </div>
 
-                <div class="col-lg-3 col-md-6">
-                    <button class="btn btn-primary w-100"
-                            @onclick="DefineAddress"
-                            disabled="@IsAddressMapLocked">
-                        Adresi Tanımla
-                    </button>
-                </div>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_addressMapMessage))
-            {
-                <div class="alert @(_isAddressMapError ? "alert-danger" : "alert-success") mt-3 mb-0"
-                     role="alert">
-                    @_addressMapMessage
-                </div>
-            }
-
-            <div class="table-responsive border rounded mt-3">
-                <table class="table table-sm table-striped table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col">Tür</th>
-                            <th scope="col">Adres</th>
-                            <th scope="col">Mevcut Değer</th>
-                            <th scope="col">Hex</th>
-                            <th scope="col">Binary</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_addressMapRows.Count == 0)
+                    <div class="col-lg-3 col-md-6">
+                        @if (_newRegisterArea == RegisterArea.Coil)
                         {
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-4">
-                                    Henüz bir Coil veya Holding Register adresi tanımlanmadı.
-                                </td>
-                            </tr>
+                            <label class="form-label d-block">
+                                Başlangıç Değeri
+                            </label>
+                            <div class="form-check form-switch address-map-switch">
+                                <input id="newCoilInitialValue"
+                                       class="form-check-input"
+                                       type="checkbox"
+                                       role="switch"
+                                       @bind="_newCoilInitialValue"
+                                       disabled="@IsAddressMapLocked" />
+                                <label class="form-check-label" for="newCoilInitialValue">
+                                    @(_newCoilInitialValue ? "1 / ON" : "0 / OFF")
+                                </label>
+                            </div>
                         }
                         else
                         {
-                            @foreach (AddressMapRow row in _addressMapRows)
-                            {
-                                <tr @key="GetAddressMapRowKey(row)">
-                                    <td>
-                                        <span class="area-badge @(row.Area == RegisterArea.Coil ? "coil-badge" : "holding-badge")">
-                                            @GetAreaName(row.Area)
-                                        </span>
-                                    </td>
-                                    <td class="fw-semibold">@row.Address</td>
-                                    <td>@GetAddressMapValueText(row)</td>
-                                    <td class="font-monospace">@($"0x{row.Value:X4}")</td>
-                                    <td class="font-monospace">@Convert.ToString(row.Value, 2).PadLeft(16, '0')</td>
-                                </tr>
-                            }
+                            <label for="newHoldingInitialValue" class="form-label">
+                                Başlangıç Değeri
+                            </label>
+                            <input id="newHoldingInitialValue"
+                                   class="form-control"
+                                   type="number"
+                                   min="0"
+                                   max="65535"
+                                   @bind="_newHoldingInitialValueText"
+                                   disabled="@IsAddressMapLocked" />
                         }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div class="card surface-card register-card mt-4">
-        <div class="card-header bg-white py-3">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div>
-                    <span class="section-eyebrow">REGISTER YÖNETİMİ</span>
-                    <h2 class="mb-1">Slave Veri Alanı</h2>
-                    <small class="text-muted">
-                        Başarılı Modbus isteklerindeki adresler otomatik olarak bu tabloya eklenir.
-                    </small>
-                </div>
-
-                <div class="d-flex flex-wrap align-items-center gap-2">
-                    <span class="count-badge">
-                        @VisibleRegisterRows.Count / @_registerRows.Count adres gösteriliyor
-                    </span>
-                    <button class="btn btn-sm btn-outline-primary"
-                            @onclick="RefreshRegisterRows">
-                        Değerleri Yenile
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger"
-                            @onclick="ShowClearTrackedRegistersConfirmation"
-                            disabled="@(_registerRows.Count == 0)">
-                        Takip Edilen Adresleri Temizle
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="card-body">
-            <div class="row g-3 align-items-end mb-3 filter-toolbar">
-                <div class="col-lg-4 col-md-6">
-                    <label for="registerTypeFilter" class="form-label">
-                        Register Türü
-                    </label>
-                    <select id="registerTypeFilter"
-                            class="form-select"
-                            @bind="_registerFilter">
-                        <option value="@RegisterFilter.All">Tüm Türler</option>
-                        <option value="@RegisterFilter.Coil">Yalnızca Coil</option>
-                        <option value="@RegisterFilter.HoldingRegister">
-                            Yalnızca Holding Register
-                        </option>
-                    </select>
-                </div>
-
-                <div class="col-lg-4 col-md-6">
-                    <label for="registerSortOrder" class="form-label">
-                        Sıralama
-                    </label>
-                    <select id="registerSortOrder"
-                            class="form-select"
-                            @bind="_registerSortOrder">
-                        <option value="@RegisterSortOrder.AddressAscending">
-                            Adres — Küçükten Büyüğe
-                        </option>
-                        <option value="@RegisterSortOrder.AddressDescending">
-                            Adres — Büyükten Küçüğe
-                        </option>
-                        <option value="@RegisterSortOrder.LastAccessedDescending">
-                            Son Erişim — Yeniden Eskiye
-                        </option>
-                        <option value="@RegisterSortOrder.LastAccessedAscending">
-                            Son Erişim — Eskiden Yeniye
-                        </option>
-                    </select>
-                </div>
-
-                <div class="col-lg-4">
-                    <button class="btn btn-outline-secondary w-100"
-                            @onclick="ResetRegisterViewOptions"
-                            disabled="@IsRegisterViewAtDefault">
-                        Filtre ve Sıralamayı Sıfırla
-                    </button>
-                </div>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_registerMessage))
-            {
-                <div class="alert @(_isRegisterError ? "alert-danger" : "alert-success") py-2"
-                     role="alert">
-                    @_registerMessage
-                </div>
-            }
-
-            @if (_showClearTrackedRegistersConfirmation)
-            {
-                <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3"
-                     role="alert">
-                    <div>
-                        <strong>Takip edilen adresler tablodan kaldırılsın mı?</strong>
-                        <div class="small mt-1">
-                            Coil ve Holding Register değerleri silinmez; yalnızca görünür adres listesi temizlenir.
-                        </div>
                     </div>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-danger"
-                                @onclick="ConfirmClearTrackedRegisters">
-                            Evet, Listeyi Temizle
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="CancelClearTrackedRegisters">
-                            Vazgeç
+
+                    <div class="col-lg-3 col-md-6">
+                        <button class="btn btn-primary w-100"
+                                @onclick="DefineAddress"
+                                disabled="@IsAddressMapLocked">
+                            Adresi Tanımla
                         </button>
                     </div>
                 </div>
-            }
 
-            <div class="table-responsive border rounded">
-                <table class="table table-striped table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col">Tür</th>
-                            <th scope="col">Adres</th>
-                            <th scope="col">Son Fonksiyon</th>
-                            <th scope="col">Decimal Değer</th>
-                            <th scope="col">Hex</th>
-                            <th scope="col">Binary</th>
-                            <th scope="col">Son Erişim</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_registerRows.Count == 0)
-                        {
-                            <tr>
-                                <td colspan="7" class="text-center text-muted py-4">
-                                    Henüz takip edilen bir adres yok. Master'dan başarılı bir FC01,
-                                    FC03 veya FC06 isteği gönderildiğinde adresler otomatik eklenecek.
-                                </td>
-                            </tr>
-                        }
-                        else if (VisibleRegisterRows.Count == 0)
-                        {
-                            <tr>
-                                <td colspan="7" class="text-center text-muted py-4">
-                                    Seçilen register türüne uyan takip edilmiş bir adres bulunamadı.
-                                </td>
-                            </tr>
-                        }
-                        else
-                        {
-                            @foreach (SlaveRegisterRow row in VisibleRegisterRows)
-                            {
-                                <tr @key="GetRowKey(row)">
-                                    <td>
-                                        <span class="area-badge @(row.Area == RegisterArea.Coil ? "coil-badge" : "holding-badge")">
-                                            @GetAreaName(row.Area)
-                                        </span>
-                                    </td>
-                                    <td class="fw-semibold">@row.Address</td>
-                                    <td><span class="function-badge">FC@(row.FunctionCode.ToString("D2"))</span></td>
-                                    <td style="min-width: 170px;">
-                                        @if (row.Area == RegisterArea.Coil)
-                                        {
-                                            <div class="form-check form-switch mb-0">
-                                                <input class="form-check-input"
-                                                       type="checkbox"
-                                                       role="switch"
-                                                       checked="@row.BoolValue"
-                                                       @onchange="args => UpdateCoil(row.Address, args)" />
-                                                <span class="ms-2">
-                                                    @(row.BoolValue ? "1 / ON" : "0 / OFF")
-                                                </span>
-                                            </div>
-                                        }
-                                        else
-                                        {
-                                            <input class="form-control form-control-sm"
-                                                   type="number"
-                                                   min="0"
-                                                   max="65535"
-                                                   value="@row.Value"
-                                                   @onchange="args => UpdateHoldingRegister(row.Address, args)" />
-                                        }
-                                    </td>
-                                    <td style="min-width: 150px;">
-                                        @if (row.Area == RegisterArea.HoldingRegister)
-                                        {
-                                            <input class="form-control form-control-sm font-monospace"
-                                                   type="text"
-                                                   value="@row.HexText"
-                                                   placeholder="0x0000"
-                                                   maxlength="6"
-                                                   @onchange="args => UpdateHoldingRegisterHex(
-                                                                                                                                                       row.Address,
-                                                                                                                                                       args)" />
-                                        }
-                                        else
-                                        {
-                                            <span class="font-monospace">
-                                                @row.HexText
-                                            </span>
-                                        }
-                                    </td>
-                                    <td class="font-monospace">@row.BinaryText</td>
-                                    <td>@row.LastAccessedUtc.ToLocalTime().ToString("HH:mm:ss")</td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div class="card surface-card history-card mt-4">
-        <div class="card-header bg-white py-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <span class="section-eyebrow">İSTEK GEÇMİŞİ</span>
-                    <h2 class="mb-0">Son Modbus İstekleri</h2>
-                </div>
-                <button class="btn btn-sm btn-outline-danger"
-                        @onclick="ShowClearHistoryConfirmation"
-                        disabled="@(_modbusFrames.Count == 0)">
-                    İstek Geçmişini Temizle
-                </button>
-            </div>
-        </div>
-
-        <div class="card-body">
-            @if (!string.IsNullOrWhiteSpace(_modbusFrameMessage))
-            {
-                <div class="alert alert-success" role="alert">
-                    @_modbusFrameMessage
-                </div>
-            }
-
-            @if (!string.IsNullOrWhiteSpace(_modbusFrameError))
-            {
-                <div class="alert alert-danger" role="alert">
-                    @_modbusFrameError
-                </div>
-            }
-
-            @if (_showClearHistoryConfirmation)
-            {
-                <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3"
-                     role="alert">
-                    <div>
-                        <strong>Modbus istek geçmişi temizlensin mi?</strong>
-                        <div class="small mt-1">
-                            Bu işlem register tablosunu ve Slave değerlerini etkilemez.
-                        </div>
+                @if (!string.IsNullOrWhiteSpace(_addressMapMessage))
+                {
+                    <div class="alert @(_isAddressMapError ? "alert-danger" : "alert-success") mt-3 mb-0"
+                         role="alert">
+                        @_addressMapMessage
                     </div>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-danger"
-                                @onclick="ConfirmClearModbusFrames">
-                            Evet, Geçmişi Temizle
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="CancelClearHistory">
-                            Vazgeç
-                        </button>
-                    </div>
-                </div>
-            }
+                }
 
-            @if (_modbusFrames.Count == 0)
-            {
-                <div class="alert alert-secondary mb-0">
-                    Henüz eksiksiz bir Modbus TCP isteği alınmadı.
-                </div>
-            }
-            else
-            {
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
+                <div class="table-responsive border rounded mt-3">
+                    <table class="table table-sm table-striped table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Zaman</th>
-                                <th>Function</th>
-                                <th>Unit ID</th>
-                                <th>Başlangıç Adresi</th>
-                                <th>Miktar / Değer</th>
-                                <th>Master</th>
+                                <th scope="col">Tür</th>
+                                <th scope="col">Adres</th>
+                                <th scope="col">Mevcut Değer</th>
+                                <th scope="col">Hex</th>
+                                <th scope="col">Binary</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (ModbusFrameRecord item in _modbusFrames)
+                            @if (_addressMapRows.Count == 0)
                             {
                                 <tr>
-                                    <td>@item.ReceivedAt.ToString("HH:mm:ss")</td>
-                                    <td>
-                                        FC@(item.Frame.FunctionCode.ToString("D2")) —
-                                        @GetFunctionName(item.Frame.FunctionCode)
-                                    </td>
-                                    <td>@item.Frame.UnitId</td>
-                                    <td>@GetAddressText(item)</td>
-                                    <td>@GetQuantityOrValueText(item)</td>
-                                    <td class="font-monospace">
-                                        @item.ClientId.ToString()[..8]
+                                    <td colspan="5" class="text-center text-muted py-4">
+                                        Henüz bir Coil veya Holding Register adresi tanımlanmadı.
                                     </td>
                                 </tr>
+                            }
+                            else
+                            {
+                                @foreach (AddressMapRow row in _addressMapRows)
+                                {
+                                    <tr @key="GetAddressMapRowKey(row)">
+                                        <td>
+                                            <span class="area-badge @(row.Area == RegisterArea.Coil ? "coil-badge" : "holding-badge")">
+                                                @GetAreaName(row.Area)
+                                            </span>
+                                        </td>
+                                        <td class="fw-semibold">@row.Address</td>
+                                        <td>@GetAddressMapValueText(row)</td>
+                                        <td class="font-monospace">@($"0x{row.Value:X4}")</td>
+                                        <td class="font-monospace">@Convert.ToString(row.Value, 2).PadLeft(16, '0')</td>
+                                    </tr>
+                                }
                             }
                         </tbody>
                     </table>
                 </div>
-            }
+            </div>
         </div>
-    </div>
+    }
+
+    @if (_activeTab == SlaveViewTab.LiveData)
+    {
+        <div class="card surface-card register-card mt-4">
+            <div class="card-header bg-white py-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="section-eyebrow">REGISTER YÖNETİMİ</span>
+                        <h2 class="mb-1">Slave Veri Alanı</h2>
+                        <small class="text-muted">
+                            Başarılı Modbus isteklerindeki adresler otomatik olarak bu tabloya eklenir.
+                        </small>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="count-badge">
+                            @VisibleRegisterRows.Count / @_registerRows.Count adres gösteriliyor
+                        </span>
+                        <button class="btn btn-sm btn-outline-primary"
+                                @onclick="RefreshRegisterRows">
+                            Değerleri Yenile
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger"
+                                @onclick="ShowClearTrackedRegistersConfirmation"
+                                disabled="@(_registerRows.Count == 0)">
+                            Takip Edilen Adresleri Temizle
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="row g-3 align-items-end mb-3 filter-toolbar">
+                    <div class="col-lg-4 col-md-6">
+                        <label for="registerTypeFilter" class="form-label">
+                            Register Türü
+                        </label>
+                        <select id="registerTypeFilter"
+                                class="form-select"
+                                @bind="_registerFilter">
+                            <option value="@RegisterFilter.All">Tüm Türler</option>
+                            <option value="@RegisterFilter.Coil">Yalnızca Coil</option>
+                            <option value="@RegisterFilter.HoldingRegister">
+                                Yalnızca Holding Register
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="col-lg-4 col-md-6">
+                        <label for="registerSortOrder" class="form-label">
+                            Sıralama
+                        </label>
+                        <select id="registerSortOrder"
+                                class="form-select"
+                                @bind="_registerSortOrder">
+                            <option value="@RegisterSortOrder.AddressAscending">
+                                Adres — Küçükten Büyüğe
+                            </option>
+                            <option value="@RegisterSortOrder.AddressDescending">
+                                Adres — Büyükten Küçüğe
+                            </option>
+                            <option value="@RegisterSortOrder.LastAccessedDescending">
+                                Son Erişim — Yeniden Eskiye
+                            </option>
+                            <option value="@RegisterSortOrder.LastAccessedAscending">
+                                Son Erişim — Eskiden Yeniye
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <button class="btn btn-outline-secondary w-100"
+                                @onclick="ResetRegisterViewOptions"
+                                disabled="@IsRegisterViewAtDefault">
+                            Filtre ve Sıralamayı Sıfırla
+                        </button>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_registerMessage))
+                {
+                    <div class="alert @(_isRegisterError ? "alert-danger" : "alert-success") py-2"
+                         role="alert">
+                        @_registerMessage
+                    </div>
+                }
+
+                @if (_showClearTrackedRegistersConfirmation)
+                {
+                    <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3"
+                         role="alert">
+                        <div>
+                            <strong>Takip edilen adresler tablodan kaldırılsın mı?</strong>
+                            <div class="small mt-1">
+                                Coil ve Holding Register değerleri silinmez; yalnızca görünür adres listesi temizlenir.
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-danger"
+                                    @onclick="ConfirmClearTrackedRegisters">
+                                Evet, Listeyi Temizle
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    @onclick="CancelClearTrackedRegisters">
+                                Vazgeç
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                <div class="table-responsive border rounded">
+                    <table class="table table-striped table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Tür</th>
+                                <th scope="col">Adres</th>
+                                <th scope="col">Son Fonksiyon</th>
+                                <th scope="col">Decimal Değer</th>
+                                <th scope="col">Hex</th>
+                                <th scope="col">Binary</th>
+                                <th scope="col">Son Erişim</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_registerRows.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-4">
+                                        Henüz takip edilen bir adres yok. Master'dan başarılı bir FC01,
+                                        FC03 veya FC06 isteği gönderildiğinde adresler otomatik eklenecek.
+                                    </td>
+                                </tr>
+                            }
+                            else if (VisibleRegisterRows.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-4">
+                                        Seçilen register türüne uyan takip edilmiş bir adres bulunamadı.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (SlaveRegisterRow row in VisibleRegisterRows)
+                                {
+                                    <tr @key="GetRowKey(row)">
+                                        <td>
+                                            <span class="area-badge @(row.Area == RegisterArea.Coil ? "coil-badge" : "holding-badge")">
+                                                @GetAreaName(row.Area)
+                                            </span>
+                                        </td>
+                                        <td class="fw-semibold">@row.Address</td>
+                                        <td><span class="function-badge">FC@(row.FunctionCode.ToString("D2"))</span></td>
+                                        <td style="min-width: 170px;">
+                                            @if (row.Area == RegisterArea.Coil)
+                                            {
+                                                <div class="form-check form-switch mb-0">
+                                                    <input class="form-check-input"
+                                                           type="checkbox"
+                                                           role="switch"
+                                                           checked="@row.BoolValue"
+                                                           @onchange="args => UpdateCoil(row.Address, args)" />
+                                                    <span class="ms-2">
+                                                        @(row.BoolValue ? "1 / ON" : "0 / OFF")
+                                                    </span>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <input class="form-control form-control-sm"
+                                                       type="number"
+                                                       min="0"
+                                                       max="65535"
+                                                       value="@row.Value"
+                                                       @onchange="args => UpdateHoldingRegister(row.Address, args)" />
+                                            }
+                                        </td>
+                                        <td style="min-width: 150px;">
+                                            @if (row.Area == RegisterArea.HoldingRegister)
+                                            {
+                                                <input class="form-control form-control-sm font-monospace"
+                                                       type="text"
+                                                       value="@row.HexText"
+                                                       placeholder="0x0000"
+                                                       maxlength="6"
+                                                       @onchange="args => UpdateHoldingRegisterHex(
+                                                                                                                                                           row.Address,
+                                                                                                                                                           args)" />
+                                        }
+                                            else
+                                            {
+                                                <span class="font-monospace">
+                                                    @row.HexText
+                                                </span>
+                                            }
+                                        </td>
+                                        <td class="font-monospace">@row.BinaryText</td>
+                                        <td>@row.LastAccessedUtc.ToLocalTime().ToString("HH:mm:ss")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card surface-card history-card mt-4">
+            <div class="card-header bg-white py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="section-eyebrow">İSTEK GEÇMİŞİ</span>
+                        <h2 class="mb-0">Son Modbus İstekleri</h2>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger"
+                            @onclick="ShowClearHistoryConfirmation"
+                            disabled="@(_modbusFrames.Count == 0)">
+                        İstek Geçmişini Temizle
+                    </button>
+                </div>
+            </div>
+
+            <div class="card-body">
+                @if (!string.IsNullOrWhiteSpace(_modbusFrameMessage))
+                {
+                    <div class="alert alert-success" role="alert">
+                        @_modbusFrameMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_modbusFrameError))
+                {
+                    <div class="alert alert-danger" role="alert">
+                        @_modbusFrameError
+                    </div>
+                }
+
+                @if (_showClearHistoryConfirmation)
+                {
+                    <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3"
+                         role="alert">
+                        <div>
+                            <strong>Modbus istek geçmişi temizlensin mi?</strong>
+                            <div class="small mt-1">
+                                Bu işlem register tablosunu ve Slave değerlerini etkilemez.
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-danger"
+                                    @onclick="ConfirmClearModbusFrames">
+                                Evet, Geçmişi Temizle
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    @onclick="CancelClearHistory">
+                                Vazgeç
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                @if (_modbusFrames.Count == 0)
+                {
+                    <div class="alert alert-secondary mb-0">
+                        Henüz eksiksiz bir Modbus TCP isteği alınmadı.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Zaman</th>
+                                    <th>Function</th>
+                                    <th>Unit ID</th>
+                                    <th>Başlangıç Adresi</th>
+                                    <th>Miktar / Değer</th>
+                                    <th>Master</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (ModbusFrameRecord item in _modbusFrames)
+                                {
+                                    <tr>
+                                        <td>@item.ReceivedAt.ToString("HH:mm:ss")</td>
+                                        <td>
+                                            FC@(item.Frame.FunctionCode.ToString("D2")) —
+                                            @GetFunctionName(item.Frame.FunctionCode)
+                                        </td>
+                                        <td>@item.Frame.UnitId</td>
+                                        <td>@GetAddressText(item)</td>
+                                        <td>@GetQuantityOrValueText(item)</td>
+                                        <td class="font-monospace">
+                                            @item.ClientId.ToString()[..8]
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -578,6 +612,7 @@
     private RegisterFilter _registerFilter = RegisterFilter.All;
     private RegisterSortOrder _registerSortOrder = RegisterSortOrder.AddressAscending;
     private RegisterArea _newRegisterArea = RegisterArea.Coil;
+    private SlaveViewTab _activeTab = SlaveViewTab.LiveData;
 
     private readonly TcpServerSettings _settings = new()
     {
@@ -650,6 +685,20 @@
 
     private bool IsAddressMapLocked =>
         _isBusy || TcpServer.IsRunning;
+
+    private string GetTabCssClass(SlaveViewTab tab)
+    {
+        return _activeTab == tab
+            ? "workspace-tab is-active"
+            : "workspace-tab";
+    }
+
+    private void SelectTab(SlaveViewTab tab)
+    {
+        _activeTab = tab;
+        _showClearTrackedRegistersConfirmation = false;
+        _showClearHistoryConfirmation = false;
+    }
 
     protected override void OnInitialized()
     {
@@ -1153,6 +1202,12 @@
         RegisterArea Area,
         ushort Address,
         ushort Value);
+
+    private enum SlaveViewTab
+    {
+        LiveData,
+        AddressMap
+    }
 
     private enum RegisterFilter
     {
